@@ -1,0 +1,785 @@
+{% extends "base.html" %}
+
+{% block title %}テンプレート管理 - 工損調査システム{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-file-excel"></i> テンプレート管理
+        </h1>
+        
+        <!-- 新規テンプレート作成ボタン -->
+        <div class="mb-4">
+            <div class="btn-group" role="group">
+                <a href="/template-editor" class="btn btn-success">
+                    <i class="fas fa-plus"></i> 新規テンプレート作成
+                </a>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadTemplateModal">
+                    <i class="fas fa-upload"></i> Excelファイルアップロード
+                </button>
+            </div>
+        </div>
+        
+        <!-- テンプレート一覧 -->
+        <div class="row" id="templateList">
+            <!-- テンプレートカードがここに表示される -->
+        </div>
+    </div>
+</div>
+
+<!-- Excelテンプレートアップロードモーダル -->
+<div class="modal fade" id="uploadTemplateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Excelテンプレートアップロード</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="uploadTemplateForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="templateFile" class="form-label">Excelファイル</label>
+                        <input type="file" class="form-control" id="templateFile" accept=".xlsx,.xls" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="templateName" class="form-label">テンプレート名</label>
+                        <input type="text" class="form-control" id="templateName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="templateDescription" class="form-label">説明</label>
+                        <textarea class="form-control" id="templateDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="button" class="btn btn-primary" onclick="uploadTemplate()">アップロード</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// テンプレート一覧の読み込み
+function loadTemplates() {
+    fetch('/api/templates/')
+        .then(response => response.json())
+        .then(templates => {
+            const templateList = document.getElementById('templateList');
+            templateList.innerHTML = '';
+            
+            templates.forEach(template => {
+                const templateCard = createTemplateCard(template);
+                templateList.appendChild(templateCard);
+            });
+        })
+        .catch(error => {
+            console.error('テンプレートの読み込みに失敗しました:', error);
+        });
+}
+
+// テンプレートカードの作成
+function createTemplateCard(template) {
+    const col = document.createElement('div');
+    col.className = 'col-md-6 col-lg-4 mb-4';
+    
+    // デバッグ情報を表示するかチェック
+    const hasExcelData = template.cell_data && template.layout_config && template.cell_styles;
+    const statusBadge = hasExcelData 
+        ? '<span class="badge bg-success">Excel解析済み</span>'
+        : '<span class="badge bg-warning">デフォルト</span>';
+    
+    col.innerHTML = `
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title">${template.name}</h5>
+                    ${statusBadge}
+                </div>
+                <p class="card-text">${template.description || '説明なし'}</p>
+                <p class="card-text">
+                    <small class="text-muted">
+                        <i class="fas fa-file-excel"></i> ${template.excel_filename || 'ファイル名なし'}
+                    </small>
+                </p>
+                <div class="debug-info" style="font-size: 10px; color: #666; margin-bottom: 10px;">
+                    📊 データ: ${hasExcelData ? 'あり' : 'なし'} | 
+                    📐 サイズ: ${template.default_width}×${template.default_height}
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-outline-primary" onclick="previewTemplate(${template.id})">
+                            <i class="fas fa-eye"></i> プレビュー
+                        </button>
+                        <button class="btn btn-sm btn-outline-info" onclick="debugTemplate_${template.id}()">
+                            <i class="fas fa-bug"></i> Debug
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteTemplate(${template.id})">
+                            <i class="fas fa-trash"></i> 削除
+                        </button>
+                    </div>
+                    <small class="text-muted">
+                        ${new Date(template.created_at).toLocaleDateString()}
+                    </small>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // デバッグ関数を動的に作成
+    window[`debugTemplate_${template.id}`] = function() {
+        debugTemplateDetailed(template.id);
+    };
+    
+    return col;
+}
+
+// 詳細デバッグ関数
+function debugTemplateDetailed(templateId) {
+    console.debug('=== テンプレート詳細デバッグ開始 ===');
+    console.debug('Template ID:', templateId);
+    
+    // デバッグAPIを呼び出し
+    fetch(`/api/templates/${templateId}/debug`)
+        .then(response => response.json())
+        .then(data => {
+            console.debug('デバッグAPI応答:', data);
+            
+            const debugInfo = data.debug_info;
+            console.debug('--- ファイル情報 ---');
+            console.debug('Excel File:', debugInfo.excel_filename);
+            console.debug('File Path:', debugInfo.excel_file_path);
+            console.debug('File Exists:', debugInfo.file_exists);
+            
+            console.debug('--- データ有無 ---');
+            console.debug('Has cell_data:', debugInfo.has_cell_data);
+            console.debug('Has layout_config:', debugInfo.has_layout_config);
+            console.debug('Has cell_styles:', debugInfo.has_cell_styles);
+            console.debug('Has merged_cells:', debugInfo.has_merged_cells);
+            
+            console.debug('--- データサイズ ---');
+            console.debug('cell_data length:', debugInfo.cell_data_length);
+            console.debug('layout_config length:', debugInfo.layout_config_length);
+            console.debug('cell_styles length:', debugInfo.cell_styles_length);
+            console.debug('merged_cells length:', debugInfo.merged_cells_length);
+            
+            console.debug('--- サンプルデータ ---');
+            if (debugInfo.cell_data_sample) {
+                console.debug('Cell Data Sample:', debugInfo.cell_data_sample);
+            }
+            
+            // アラートでも表示
+            const summary = `
+📋 テンプレート: ${debugInfo.name}
+📁 Excelファイル: ${debugInfo.excel_filename}
+💾 ファイル存在: ${debugInfo.file_exists ? 'はい' : 'いいえ'}
+📊 データ状況:
+  - cell_data: ${debugInfo.has_cell_data ? `あり (${debugInfo.cell_data_length}文字)` : 'なし'}
+  - layout_config: ${debugInfo.has_layout_config ? `あり (${debugInfo.layout_config_length}文字)` : 'なし'}
+  - cell_styles: ${debugInfo.has_cell_styles ? `あり (${debugInfo.cell_styles_length}文字)` : 'なし'}
+  - merged_cells: ${debugInfo.has_merged_cells ? `あり (${debugInfo.merged_cells_length}文字)` : 'なし'}
+📐 サイズ: ${debugInfo.default_width} × ${debugInfo.default_height}
+            `;
+            alert(summary);
+            
+            console.debug('=== テンプレート詳細デバッグ終了 ===');
+        })
+        .catch(error => {
+            console.error('デバッグAPI エラー:', error);
+            alert('デバッグ情報の取得に失敗しました');
+        });
+}
+
+// テンプレートのアップロード
+function uploadTemplate() {
+    const fileInput = document.getElementById('templateFile');
+    const name = document.getElementById('templateName').value;
+    const description = document.getElementById('templateDescription').value;
+    
+    if (!fileInput.files[0]) {
+        alert('Excelファイルを選択してください');
+        return;
+    }
+    
+    if (!name) {
+        alert('テンプレート名を入力してください');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('name', name);
+    formData.append('description', description);
+    
+    fetch('/api/templates/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(template => {
+        // モーダルを閉じる
+        const modal = bootstrap.Modal.getInstance(document.getElementById('uploadTemplateModal'));
+        modal.hide();
+        
+        // フォームをリセット
+        document.getElementById('uploadTemplateForm').reset();
+        
+        // テンプレート一覧を再読み込み
+        loadTemplates();
+    })
+    .catch(error => {
+        console.error('テンプレートのアップロードに失敗しました:', error);
+        alert('テンプレートのアップロードに失敗しました');
+    });
+}
+
+// テンプレートのプレビュー
+function previewTemplate(templateId) {
+    console.debug('テンプレートプレビュー開始:', templateId);
+    debugAPI(`/api/templates/${templateId}`);
+    
+    fetch(`/api/templates/${templateId}`)
+        .then(response => {
+            console.debug('API Response Status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(template => {
+            console.debug('取得したテンプレートデータ:', template);
+            debugTemplate(template);
+            
+            // より詳細なデバッグ情報
+            console.debug('詳細デバッグ情報:');
+            console.debug('- cell_data type:', typeof template.cell_data);
+            console.debug('- cell_data length:', template.cell_data ? template.cell_data.length : 'null');
+            console.debug('- layout_config type:', typeof template.layout_config);
+            console.debug('- cell_styles type:', typeof template.cell_styles);
+            console.debug('- merged_cells type:', typeof template.merged_cells);
+            
+            if (template.cell_data) {
+                try {
+                    const parsed = JSON.parse(template.cell_data);
+                    console.debug('- parsed cell_data keys:', Object.keys(parsed));
+                    console.debug('- parsed cell_data sample:', Object.entries(parsed).slice(0, 5));
+                } catch (e) {
+                    console.error('cell_data JSON parse error:', e);
+                }
+            }
+            
+            showTemplatePreviewModal(template);
+        })
+        .catch(error => {
+            console.error('テンプレートの取得に失敗しました:', error);
+            debugError(error, 'テンプレート取得');
+            alert(`テンプレートの取得に失敗しました: ${error.message}`);
+        });
+}
+
+// テンプレートプレビューモーダルを表示
+function showTemplatePreviewModal(template) {
+    // モーダルが存在しない場合は作成
+    let modal = document.getElementById('templatePreviewModal');
+    if (!modal) {
+        modal = createTemplatePreviewModal();
+        document.body.appendChild(modal);
+    }
+    
+    // モーダル内容を更新
+    updateTemplatePreviewContent(template);
+    
+    // モーダルを表示
+    const bootstrapModal = new bootstrap.Modal(modal);
+    bootstrapModal.show();
+}
+
+// テンプレートプレビューモーダルを作成
+function createTemplatePreviewModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = 'templatePreviewModal';
+    modal.tabIndex = -1;
+    
+    modal.innerHTML = `
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">テンプレートプレビュー</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="templatePreviewContent">
+                        <!-- プレビュー内容がここに表示される -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="useTemplateInCamera()">
+                        <i class="fas fa-camera"></i> 撮影画面で使用
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    return modal;
+}
+
+// テンプレートプレビュー内容を更新
+function updateTemplatePreviewContent(template) {
+    const content = document.getElementById('templatePreviewContent');
+    
+    content.innerHTML = `
+        <div class="row">
+            <div class="col-md-6">
+                <h6>テンプレート情報</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <th>名前</th>
+                        <td>${template.name}</td>
+                    </tr>
+                    <tr>
+                        <th>説明</th>
+                        <td>${template.description || '説明なし'}</td>
+                    </tr>
+                    <tr>
+                        <th>Excelファイル</th>
+                        <td>${template.excel_filename || 'ファイル名なし'}</td>
+                    </tr>
+                    <tr>
+                        <th>デフォルトサイズ</th>
+                        <td>${template.default_width} × ${template.default_height} px</td>
+                    </tr>
+                    <tr>
+                        <th>作成日</th>
+                        <td>${new Date(template.created_at).toLocaleDateString()}</td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6>黒板プレビュー</h6>
+                <div class="blackboard-preview">
+                    ${generateBlackboardPreview(template)}
+                </div>
+            </div>
+        </div>
+        
+        ${template.cell_data ? `
+            <div class="mt-4">
+                <h6>セルデータ</h6>
+                <div class="cell-data-preview">
+                    ${generateCellDataPreview(template.cell_data)}
+                </div>
+            </div>
+        ` : ''}
+        
+        ${template.merged_cells ? `
+            <div class="mt-4">
+                <h6>結合セル情報</h6>
+                <div class="merged-cells-preview">
+                    ${generateMergedCellsPreview(template.merged_cells)}
+                </div>
+            </div>
+        ` : ''}
+    `;
+    
+    // 選択されたテンプレートIDを保存
+    content.dataset.templateId = template.id;
+}
+
+// 黒板プレビューを生成
+function generateBlackboardPreview(template) {
+    try {
+        // Excelレイアウト情報がある場合は、実際のExcelレイアウトを再現
+        if (template.cell_data && template.layout_config && template.cell_styles) {
+            return generateExcelBasedPreview(template);
+        }
+    } catch (error) {
+        console.warn('Excelレイアウトの生成に失敗しました:', error);
+    }
+    
+    // フォールバック: デフォルトレイアウト
+    return generateDefaultPreview(template);
+}
+
+// Excelベースのプレビューを生成
+function generateExcelBasedPreview(template) {
+    const cellData = JSON.parse(template.cell_data);
+    const layoutConfig = JSON.parse(template.layout_config);
+    const cellStyles = JSON.parse(template.cell_styles);
+    const mergedCells = template.merged_cells ? JSON.parse(template.merged_cells) : [];
+    
+    const maxRow = layoutConfig.max_row;
+    const maxCol = layoutConfig.max_col;
+    const rowHeights = layoutConfig.row_heights || {};
+    const colWidths = layoutConfig.col_widths || {};
+    
+    // テーブルを構築
+    let tableHTML = '<table style="border-collapse: collapse; font-size: 11px; font-family: Arial, sans-serif;">';
+    
+    for (let row = 1; row <= maxRow; row++) {
+        const rowHeight = rowHeights[row] ? `${rowHeights[row] * 1.2}px` : 'auto';
+        tableHTML += `<tr style="height: ${rowHeight};">`;
+        
+        for (let col = 1; col <= maxCol; col++) {
+            const cellAddress = numberToColumn(col) + row;
+            const cellValue = cellData[cellAddress] || '';
+            const cellStyle = cellStyles[cellAddress] || {};
+            
+            // 結合セルのチェック
+            const mergeInfo = getMergeInfo(cellAddress, mergedCells);
+            if (mergeInfo.skip) {
+                continue; // このセルは結合により既に表示済み
+            }
+            
+            // セルスタイルを構築
+            const styles = buildCellStyle(cellStyle, colWidths[numberToColumn(col)]);
+            
+            // セルを生成
+            const colspan = mergeInfo.colspan > 1 ? `colspan="${mergeInfo.colspan}"` : '';
+            const rowspan = mergeInfo.rowspan > 1 ? `rowspan="${mergeInfo.rowspan}"` : '';
+            
+            tableHTML += `<td ${colspan} ${rowspan} style="${styles}">${escapeHtml(cellValue)}</td>`;
+        }
+        
+        tableHTML += '</tr>';
+    }
+    
+    tableHTML += '</table>';
+    
+    const width = template.default_width || 400;
+    const height = template.default_height || 300;
+    
+    return `
+        <div class="excel-preview-container" style="width: ${width}px; height: ${height}px; max-width: 100%; border: 2px solid #333; background: white; padding: 10px; border-radius: 5px; overflow: auto;">
+            <div style="transform-origin: top left; transform: scale(0.8);">
+                ${tableHTML}
+            </div>
+            <div style="margin-top: 10px; padding: 5px; background: #f8f9fa; border-radius: 3px; font-size: 10px; color: #666;">
+                <strong>実際のExcelレイアウト</strong> (${maxRow}行 × ${maxCol}列)
+            </div>
+        </div>
+    `;
+}
+
+// デフォルトプレビューを生成
+function generateDefaultPreview(template) {
+    const width = template.default_width || 400;
+    const height = template.default_height || 300;
+    
+    return `
+        <div class="blackboard-preview-container" style="width: ${width}px; height: ${height}px; max-width: 100%; border: 2px solid #333; background: white; padding: 10px; border-radius: 5px; font-size: 12px;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <th style="border: 1px solid #333; padding: 4px; background: #f0f0f0;">調査番号</th>
+                    <td style="border: 1px solid #333; padding: 4px;">サンプル001</td>
+                </tr>
+                <tr>
+                    <th style="border: 1px solid #333; padding: 4px; background: #f0f0f0;">建物番号</th>
+                    <td style="border: 1px solid #333; padding: 4px;">A棟-101</td>
+                </tr>
+                <tr>
+                    <th style="border: 1px solid #333; padding: 4px; background: #f0f0f0;">所有者</th>
+                    <td style="border: 1px solid #333; padding: 4px;">サンプル所有者</td>
+                </tr>
+                <tr>
+                    <th style="border: 1px solid #333; padding: 4px; background: #f0f0f0;">傷の種類</th>
+                    <td style="border: 1px solid #333; padding: 4px;">ひび割れ</td>
+                </tr>
+                <tr>
+                    <th style="border: 1px solid #333; padding: 4px; background: #f0f0f0;">寸法</th>
+                    <td style="border: 1px solid #333; padding: 4px;">10×5cm</td>
+                </tr>
+                <tr>
+                    <th style="border: 1px solid #333; padding: 4px; background: #f0f0f0;">損傷箇所</th>
+                    <td style="border: 1px solid #333; padding: 4px;">外壁東面</td>
+                </tr>
+                <tr>
+                    <th style="border: 1px solid #333; padding: 4px; background: #f0f0f0;">写真番号</th>
+                    <td style="border: 1px solid #333; padding: 4px;">240706-1430</td>
+                </tr>
+                <tr>
+                    <th style="border: 1px solid #333; padding: 4px; background: #f0f0f0;">撮影日</th>
+                    <td style="border: 1px solid #333; padding: 4px;">${new Date().toLocaleDateString()}</td>
+                </tr>
+            </table>
+            <div style="margin-top: 10px; padding: 5px; background: #fff3cd; border-radius: 3px; font-size: 10px; color: #856404;">
+                <strong>デフォルトレイアウト</strong> (Excelデータなし)
+            </div>
+        </div>
+    `;
+}
+
+// 列番号を文字に変換 (1 -> A, 2 -> B, etc.)
+function numberToColumn(num) {
+    let result = '';
+    while (num > 0) {
+        num--;
+        result = String.fromCharCode(65 + (num % 26)) + result;
+        num = Math.floor(num / 26);
+    }
+    return result;
+}
+
+// 結合セル情報を取得
+function getMergeInfo(cellAddress, mergedCells) {
+    let colspan = 1;
+    let rowspan = 1;
+    let skip = false;
+    
+    for (const merge of mergedCells) {
+        const startCell = merge.start;
+        const endCell = merge.end;
+        
+        if (cellAddress === startCell) {
+            // 結合の開始セル
+            const startCol = getColumnNumber(startCell);
+            const startRow = getRowNumber(startCell);
+            const endCol = getColumnNumber(endCell);
+            const endRow = getRowNumber(endCell);
+            
+            colspan = endCol - startCol + 1;
+            rowspan = endRow - startRow + 1;
+        } else if (isInMergeRange(cellAddress, merge)) {
+            // 結合に含まれるが開始セルではない
+            skip = true;
+        }
+    }
+    
+    return { colspan, rowspan, skip };
+}
+
+// セルが結合範囲に含まれるかチェック
+function isInMergeRange(cellAddress, merge) {
+    const startCol = getColumnNumber(merge.start);
+    const startRow = getRowNumber(merge.start);
+    const endCol = getColumnNumber(merge.end);
+    const endRow = getRowNumber(merge.end);
+    
+    const cellCol = getColumnNumber(cellAddress);
+    const cellRow = getRowNumber(cellAddress);
+    
+    return cellCol >= startCol && cellCol <= endCol && 
+           cellRow >= startRow && cellRow <= endRow;
+}
+
+// 列文字を番号に変換 (A -> 1, B -> 2, etc.)
+function getColumnNumber(cellAddress) {
+    const match = cellAddress.match(/^([A-Z]+)/);
+    if (!match) return 1;
+    
+    const letters = match[1];
+    let result = 0;
+    for (let i = 0; i < letters.length; i++) {
+        result = result * 26 + (letters.charCodeAt(i) - 64);
+    }
+    return result;
+}
+
+// 行番号を取得
+function getRowNumber(cellAddress) {
+    const match = cellAddress.match(/(\d+)$/);
+    return match ? parseInt(match[1]) : 1;
+}
+
+// セルスタイルを構築
+function buildCellStyle(cellStyle, colWidth) {
+    let styles = [];
+    
+    // 幅設定
+    if (colWidth) {
+        styles.push(`width: ${colWidth * 8}px`);
+    }
+    
+    // 罫線設定
+    if (cellStyle.border) {
+        const border = cellStyle.border;
+        if (border.left && border.left.style) {
+            styles.push(`border-left: 1px ${convertBorderStyle(border.left.style)} ${convertColor(border.left.color)}`);
+        }
+        if (border.right && border.right.style) {
+            styles.push(`border-right: 1px ${convertBorderStyle(border.right.style)} ${convertColor(border.right.color)}`);
+        }
+        if (border.top && border.top.style) {
+            styles.push(`border-top: 1px ${convertBorderStyle(border.top.style)} ${convertColor(border.top.color)}`);
+        }
+        if (border.bottom && border.bottom.style) {
+            styles.push(`border-bottom: 1px ${convertBorderStyle(border.bottom.style)} ${convertColor(border.bottom.color)}`);
+        }
+    }
+    
+    // 背景色設定
+    if (cellStyle.fill && cellStyle.fill.color) {
+        styles.push(`background-color: ${convertColor(cellStyle.fill.color)}`);
+    }
+    
+    // フォント設定
+    if (cellStyle.font) {
+        const font = cellStyle.font;
+        if (font.name) styles.push(`font-family: ${font.name}`);
+        if (font.size) styles.push(`font-size: ${font.size}px`);
+        if (font.bold) styles.push('font-weight: bold');
+        if (font.italic) styles.push('font-style: italic');
+        if (font.color) styles.push(`color: ${convertColor(font.color)}`);
+    }
+    
+    // 配置設定
+    if (cellStyle.alignment) {
+        const alignment = cellStyle.alignment;
+        if (alignment.horizontal) {
+            styles.push(`text-align: ${alignment.horizontal}`);
+        }
+        if (alignment.vertical) {
+            styles.push(`vertical-align: ${alignment.vertical}`);
+        }
+        if (alignment.wrap_text) {
+            styles.push('white-space: pre-wrap');
+        }
+    }
+    
+    // デフォルトスタイル
+    styles.push('padding: 2px 4px');
+    
+    return styles.join('; ');
+}
+
+// 罫線スタイルを変換
+function convertBorderStyle(excelStyle) {
+    const styleMap = {
+        'thin': 'solid',
+        'medium': 'solid',
+        'thick': 'solid',
+        'dotted': 'dotted',
+        'dashed': 'dashed',
+        'double': 'double'
+    };
+    return styleMap[excelStyle] || 'solid';
+}
+
+// 色を変換
+function convertColor(color) {
+    if (!color || color === 'None') return '#000000';
+    if (color.startsWith('#')) return color;
+    if (color.length === 8) {
+        // ARGB形式の場合、ARGBからRGBに変換
+        return '#' + color.substring(2);
+    }
+    return '#' + color;
+}
+
+// HTMLエスケープ
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// セルデータプレビューを生成
+function generateCellDataPreview(cellDataJson) {
+    try {
+        const cellData = JSON.parse(cellDataJson);
+        const entries = Object.entries(cellData).slice(0, 10); // 最初の10件のみ表示
+        
+        if (entries.length === 0) {
+            return '<p class="text-muted">セルデータがありません</p>';
+        }
+        
+        return `
+            <table class="table table-sm table-striped">
+                <thead>
+                    <tr>
+                        <th>セル</th>
+                        <th>値</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${entries.map(([cell, value]) => `
+                        <tr>
+                            <td><code>${cell}</code></td>
+                            <td>${value}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            ${Object.keys(cellData).length > 10 ? `<p class="text-muted">他 ${Object.keys(cellData).length - 10} 件...</p>` : ''}
+        `;
+    } catch (error) {
+        return '<p class="text-danger">セルデータの解析に失敗しました</p>';
+    }
+}
+
+// 結合セル情報プレビューを生成
+function generateMergedCellsPreview(mergedCellsJson) {
+    try {
+        const mergedCells = JSON.parse(mergedCellsJson);
+        
+        if (!Array.isArray(mergedCells) || mergedCells.length === 0) {
+            return '<p class="text-muted">結合セルがありません</p>';
+        }
+        
+        return `
+            <table class="table table-sm table-striped">
+                <thead>
+                    <tr>
+                        <th>結合範囲</th>
+                        <th>開始セル</th>
+                        <th>終了セル</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${mergedCells.map((range, index) => `
+                        <tr>
+                            <td>範囲 ${index + 1}</td>
+                            <td><code>${range.start || '不明'}</code></td>
+                            <td><code>${range.end || '不明'}</code></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } catch (error) {
+        return '<p class="text-danger">結合セル情報の解析に失敗しました</p>';
+    }
+}
+
+// 撮影画面でテンプレートを使用
+function useTemplateInCamera() {
+    const content = document.getElementById('templatePreviewContent');
+    const templateId = content.dataset.templateId;
+    
+    if (templateId) {
+        // URLパラメータでテンプレートIDを渡して撮影画面に移動
+        window.location.href = `/camera?template=${templateId}`;
+    }
+}
+
+// テンプレートの削除
+function deleteTemplate(templateId) {
+    if (!confirm('このテンプレートを削除しますか？')) {
+        return;
+    }
+    
+    fetch(`/api/templates/${templateId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(result => {
+        loadTemplates();
+    })
+    .catch(error => {
+        console.error('テンプレートの削除に失敗しました:', error);
+        alert('テンプレートの削除に失敗しました');
+    });
+}
+
+// ページ読み込み時の処理
+document.addEventListener('DOMContentLoaded', function() {
+    loadTemplates();
+});
+</script>
+{% endblock %}

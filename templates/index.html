@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}ホーム - 工損調査システム{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-home"></i> 工損調査システム
+        </h1>
+        
+        <!-- 新規プロジェクト作成ボタン -->
+        <div class="mb-4">
+            <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#newProjectModal">
+                <i class="fas fa-plus"></i> 新規プロジェクト作成
+            </button>
+        </div>
+        
+        <!-- プロジェクト一覧 -->
+        <div class="row" id="projectList">
+            <!-- プロジェクトカードがここに表示される -->
+        </div>
+    </div>
+</div>
+
+<!-- 新規プロジェクト作成モーダル -->
+<div class="modal fade" id="newProjectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新規プロジェクト作成</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="newProjectForm">
+                    <div class="mb-3">
+                        <label for="projectName" class="form-label">プロジェクト名</label>
+                        <input type="text" class="form-control" id="projectName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="projectLocation" class="form-label">場所</label>
+                        <input type="text" class="form-control" id="projectLocation">
+                    </div>
+                    <div class="mb-3">
+                        <label for="projectDescription" class="form-label">説明</label>
+                        <textarea class="form-control" id="projectDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="button" class="btn btn-primary" onclick="createProject()">作成</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// プロジェクト一覧の読み込み
+function loadProjects() {
+    fetch('/api/projects/')
+        .then(response => response.json())
+        .then(projects => {
+            const projectList = document.getElementById('projectList');
+            projectList.innerHTML = '';
+            
+            projects.forEach(project => {
+                const projectCard = createProjectCard(project);
+                projectList.appendChild(projectCard);
+            });
+        })
+        .catch(error => {
+            console.error('プロジェクトの読み込みに失敗しました:', error);
+        });
+}
+
+// プロジェクトカードの作成
+function createProjectCard(project) {
+    const col = document.createElement('div');
+    col.className = 'col-md-6 col-lg-4 mb-4';
+    
+    col.innerHTML = `
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">${project.name}</h5>
+                <p class="card-text">
+                    <small class="text-muted">
+                        <i class="fas fa-map-marker-alt"></i> ${project.location || '場所未設定'}
+                    </small>
+                </p>
+                <p class="card-text">${project.description || '説明なし'}</p>
+                <div class="d-flex justify-content-between">
+                    <a href="/project/${project.id}" class="btn btn-primary">
+                        <i class="fas fa-eye"></i> 詳細
+                    </a>
+                    <small class="text-muted">
+                        作成日: ${new Date(project.created_at).toLocaleDateString()}
+                    </small>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    return col;
+}
+
+// 新規プロジェクト作成
+function createProject() {
+    const name = document.getElementById('projectName').value;
+    const location = document.getElementById('projectLocation').value;
+    const description = document.getElementById('projectDescription').value;
+    
+    if (!name) {
+        alert('プロジェクト名を入力してください');
+        return;
+    }
+    
+    fetch('/api/projects/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            name: name,
+            location: location,
+            description: description
+        })
+    })
+    .then(response => response.json())
+    .then(project => {
+        // モーダルを閉じる
+        const modal = bootstrap.Modal.getInstance(document.getElementById('newProjectModal'));
+        modal.hide();
+        
+        // フォームをリセット
+        document.getElementById('newProjectForm').reset();
+        
+        // プロジェクト一覧を再読み込み
+        loadProjects();
+    })
+    .catch(error => {
+        console.error('プロジェクトの作成に失敗しました:', error);
+        alert('プロジェクトの作成に失敗しました');
+    });
+}
+
+// ページ読み込み時の処理
+document.addEventListener('DOMContentLoaded', function() {
+    loadProjects();
+});
+</script>
+{% endblock %}

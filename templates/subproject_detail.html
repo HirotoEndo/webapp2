@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block title %}{{ subproject.name }} - {{ project.name }} - 工損調査システム{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">ホーム</a></li>
+                <li class="breadcrumb-item"><a href="/project/{{ project.id }}">{{ project.name }}</a></li>
+                <li class="breadcrumb-item active">{{ subproject.name }}</li>
+            </ol>
+        </nav>
+        
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-map-marker-alt"></i> {{ subproject.name }}
+            </h1>
+            <div class="btn-group">
+                <a href="/camera?project={{ project.id }}&subproject={{ subproject.id }}" class="btn btn-primary">
+                    <i class="fas fa-camera"></i> 撮影
+                </a>
+                <button class="btn btn-success" onclick="exportSubproject()">
+                    <i class="fas fa-download"></i> エクスポート
+                </button>
+            </div>
+        </div>
+        
+        <!-- サブプロジェクト情報 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5>エリア情報</h5>
+                        <p><strong>プロジェクト:</strong> {{ project.name }}</p>
+                        <p><strong>場所:</strong> {{ project.location or '未設定' }}</p>
+                        <p><strong>作成日:</strong> {{ subproject.created_at.strftime('%Y年%m月%d日') }}</p>
+                        <p><strong>更新日:</strong> {{ subproject.updated_at.strftime('%Y年%m月%d日') }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>説明</h5>
+                        <p>{{ subproject.description or '説明なし' }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 写真一覧 -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-images"></i> 写真一覧</h5>
+                <span id="photoCount" class="badge bg-secondary">0枚</span>
+            </div>
+            <div class="card-body">
+                <div class="row" id="photoList">
+                    <!-- 写真サムネイルがここに表示される -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 写真詳細モーダル -->
+<div class="modal fade" id="photoDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">写真詳細</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <img id="photoDetailImage" class="img-fluid" alt="写真">
+                    </div>
+                    <div class="col-md-4">
+                        <h6>写真情報</h6>
+                        <p><strong>ファイル名:</strong> <span id="photoDetailFilename"></span></p>
+                        <p><strong>撮影日時:</strong> <span id="photoDetailCaptured"></span></p>
+                        <p><strong>ファイルサイズ:</strong> <span id="photoDetailSize"></span></p>
+                        
+                        <h6 class="mt-4">黒板情報</h6>
+                        <div id="blackboardInfo">
+                            <!-- 黒板情報がここに表示される -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" onclick="deletePhoto()">
+                    <i class="fas fa-trash"></i> 削除
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const projectId = {{ project.id }};
+const subprojectId = {{ subproject.id }};
+let currentPhotoId = null;
+
+// 写真一覧の読み込み
+function loadPhotos() {
+    fetch(`/api/photos/subproject/${subprojectId}`)
+        .then(response => response.json())
+        .then(photos => {
+            const photoList = document.getElementById('photoList');
+            const photoCount = document.getElementById('photoCount');
+            
+            photoList.innerHTML = '';
+            photoCount.textContent = `${photos.length}枚`;
+            
+            if (photos.length === 0) {
+                photoList.innerHTML = `
+                    <div class="col-12 text-center py-5">
+                        <i class="fas fa-camera fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">写真がありません</h5>
+                        <p class="text-muted">撮影ボタンから写真を追加してください</p>
+                        <a href="/camera?project=${projectId}&subproject=${subprojectId}" class="btn btn-primary">
+                            <i class="fas fa-camera"></i> 撮影開始
+                        </a>
+                    </div>
+                `;
+                return;
+            }
+            
+            photos.forEach((photo, index) => {
+                const photoCard = createPhotoCard(photo, index);
+                photoList.appendChild(photoCard);
+            });
+        })
+        .catch(error => {
+            console.error('写真の読み込みに失敗しました:', error);
+        });
+}
+
+// 写真カードの作成
+function createPhotoCard(photo, index) {
+    const col = document.createElement('div');
+    col.className = 'col-md-3 col-sm-6 mb-3';
+    
+    col.innerHTML = `
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-image fa-3x text-primary mb-3"></i>
+                <h6 class="card-title">${photo.original_filename || photo.filename}</h6>
+                <p class="card-text">
+                    <small class="text-muted">
+                        ${new Date(photo.captured_at).toLocaleDateString()}
+                    </small>
+                </p>
+                <button class="btn btn-sm btn-outline-primary" onclick="showPhotoDetail(${photo.id})">
+                    <i class="fas fa-eye"></i> 詳細
+                </button>
+            </div>
+        </div>
+    `;
+    
+    return col;
+}
+
+// 写真詳細の表示
+function showPhotoDetail(photoId) {
+    currentPhotoId = photoId;
+    
+    fetch(`/api/photos/${photoId}`)
+        .then(response => response.json())
+        .then(photo => {
+            // 写真情報を表示
+            document.getElementById('photoDetailFilename').textContent = photo.original_filename || photo.filename;
+            document.getElementById('photoDetailCaptured').textContent = new Date(photo.captured_at).toLocaleString();
+            document.getElementById('photoDetailSize').textContent = photo.file_size ? `${(photo.file_size / 1024).toFixed(1)} KB` : '不明';
+            
+            // 写真を表示（実際の実装では画像パスを使用）
+            document.getElementById('photoDetailImage').src = `/static/placeholder-image.jpg`;
+            
+            // 黒板情報を表示（TODO: 実装）
+            document.getElementById('blackboardInfo').innerHTML = '<p class="text-muted">黒板情報は実装予定です</p>';
+            
+            // モーダルを表示
+            const modal = new bootstrap.Modal(document.getElementById('photoDetailModal'));
+            modal.show();
+        })
+        .catch(error => {
+            console.error('写真の詳細取得に失敗しました:', error);
+        });
+}
+
+// 写真の削除
+function deletePhoto() {
+    if (!currentPhotoId) return;
+    
+    if (!confirm('この写真を削除しますか？')) {
+        return;
+    }
+    
+    fetch(`/api/photos/${currentPhotoId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(result => {
+        // モーダルを閉じる
+        const modal = bootstrap.Modal.getInstance(document.getElementById('photoDetailModal'));
+        modal.hide();
+        
+        // 写真一覧を再読み込み
+        loadPhotos();
+    })
+    .catch(error => {
+        console.error('写真の削除に失敗しました:', error);
+        alert('写真の削除に失敗しました');
+    });
+}
+
+// サブプロジェクトのエクスポート
+function exportSubproject() {
+    window.open(`/api/export/project/${projectId}?subproject_id=${subprojectId}`, '_blank');
+}
+
+// ページ読み込み時の処理
+document.addEventListener('DOMContentLoaded', function() {
+    loadPhotos();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,636 @@
+{% extends "base.html" %}
+
+{% block title %}撮影 - 工損調査システム{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 全画面撮影画面 */
+    .camera-fullscreen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: #000;
+        z-index: 999;
+        overflow: hidden;
+    }
+    
+    .camera-container {
+        position: relative;
+        width: 100%;
+        height: 100vh;
+        background: #000;
+        overflow: hidden;
+    }
+    
+    .camera-video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    /* 撮影コントロール */
+    .camera-controls {
+        position: absolute;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 15px;
+        z-index: 10;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 15px 25px;
+        border-radius: 50px;
+    }
+    
+    .camera-controls .btn {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        border: 3px solid white;
+        transition: all 0.3s ease;
+    }
+    
+    .camera-controls .btn:hover {
+        transform: scale(1.1);
+    }
+    
+    .camera-controls .btn-capture {
+        width: 80px;
+        height: 80px;
+        background: #ff4444;
+        border-color: white;
+    }
+    
+    /* 黒板オーバーレイ */
+    .blackboard-overlay {
+        position: absolute;
+        top: 50px;
+        right: 50px;
+        background: rgba(255, 255, 255, 0.95);
+        padding: 15px;
+        border-radius: 10px;
+        border: 2px solid #333;
+        min-width: 300px;
+        max-width: 400px;
+        z-index: 10;
+        cursor: move;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .blackboard-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+    }
+    
+    .blackboard-table th,
+    .blackboard-table td {
+        border: 1px solid #333;
+        padding: 4px 6px;
+        text-align: left;
+    }
+    
+    .blackboard-table th {
+        background: #f0f0f0;
+        font-weight: bold;
+        font-size: 10px;
+    }
+    
+    .blackboard-table td {
+        background: white;
+        font-size: 11px;
+    }
+    
+    /* トップメニューバー */
+    .top-menu {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 60px;
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), transparent);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        z-index: 15;
+    }
+    
+    .menu-left,
+    .menu-right {
+        display: flex;
+        gap: 10px;
+    }
+    
+    .menu-btn {
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 8px 15px;
+        border-radius: 20px;
+        font-size: 14px;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(10px);
+    }
+    
+    .menu-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+        color: white;
+    }
+    
+    /* 黒板編集パネル */
+    .blackboard-edit-panel {
+        position: absolute;
+        top: 70px;
+        left: 20px;
+        width: 320px;
+        max-height: calc(100vh - 200px);
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 10px;
+        padding: 20px;
+        z-index: 12;
+        overflow-y: auto;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+    
+    .blackboard-edit-panel.open {
+        transform: translateX(0);
+    }
+    
+    .blackboard-edit-panel h6 {
+        margin-bottom: 15px;
+        color: #333;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 5px;
+    }
+    
+    .blackboard-edit-panel .form-group {
+        margin-bottom: 12px;
+    }
+    
+    .blackboard-edit-panel label {
+        font-size: 12px;
+        font-weight: bold;
+        color: #555;
+        margin-bottom: 3px;
+        display: block;
+    }
+    
+    .blackboard-edit-panel input,
+    .blackboard-edit-panel select,
+    .blackboard-edit-panel textarea {
+        font-size: 12px;
+        padding: 6px 8px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        width: 100%;
+    }
+    
+    /* 動的フィールドのスタイル */
+    .dynamic-field {
+        border-left: 3px solid #007bff;
+        padding-left: 10px;
+        margin-left: 5px;
+        background: rgba(0, 123, 255, 0.05);
+    }
+    
+    /* 画質調整パネル */
+    .quality-panel {
+        position: absolute;
+        top: 70px;
+        right: 20px;
+        width: 280px;
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 10px;
+        padding: 20px;
+        z-index: 12;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+    }
+    
+    .quality-panel.open {
+        transform: translateX(0);
+    }
+    
+    .quality-panel h6 {
+        margin-bottom: 15px;
+        color: #333;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 5px;
+    }
+    
+    .quality-slider {
+        width: 100%;
+        margin: 10px 0;
+    }
+    
+    .quality-value {
+        text-align: center;
+        font-weight: bold;
+        color: #007bff;
+        margin-top: 5px;
+    }
+    
+    /* レスポンシブ対応 */
+    @media (max-width: 768px) {
+        .blackboard-overlay {
+            top: 80px;
+            right: 20px;
+            left: 20px;
+            width: auto;
+            min-width: auto;
+            max-width: none;
+        }
+        
+        .blackboard-edit-panel,
+        .quality-panel {
+            width: calc(100vw - 40px);
+            left: 20px;
+            right: 20px;
+        }
+        
+        .quality-panel {
+            top: 140px;
+        }
+        
+        .camera-controls {
+            bottom: 20px;
+            padding: 10px 20px;
+            gap: 10px;
+        }
+        
+        .camera-controls .btn {
+            width: 50px;
+            height: 50px;
+            font-size: 1.2rem;
+        }
+        
+        .camera-controls .btn-capture {
+            width: 70px;
+            height: 70px;
+        }
+        
+        .top-menu {
+            height: 50px;
+            padding: 0 10px;
+        }
+        
+        .menu-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+    }
+    
+    /* 隠すためのナビゲーション */
+    .hide-nav {
+        display: none !important;
+    }
+    
+    /* 撮影結果表示 */
+    .capture-result {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.9);
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .capture-result-content {
+        max-width: 90vw;
+        max-height: 90vh;
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+    }
+    
+    .captured-image {
+        max-width: 100%;
+        max-height: 70vh;
+        border-radius: 5px;
+        margin-bottom: 20px;
+    }
+    
+    .capture-result-controls {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+    }
+    
+    /* グリッド表示 */
+    .camera-grid {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 5;
+    }
+    
+    .grid-line {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.5);
+    }
+    
+    .grid-vertical {
+        width: 1px;
+        height: 100%;
+    }
+    
+    .grid-horizontal {
+        height: 1px;
+        width: 100%;
+    }
+    
+    /* タイマー表示 */
+    .timer-display {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 25;
+    }
+    
+    .timer-count {
+        font-size: 120px;
+        font-weight: bold;
+        color: white;
+        text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        animation: timerPulse 1s ease-in-out;
+    }
+    
+    @keyframes timerPulse {
+        0% { transform: scale(0.5); opacity: 0; }
+        50% { transform: scale(1.2); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 全画面カメラ表示エリア -->
+<div class="camera-fullscreen">
+    <div class="camera-container">
+        <video id="cameraVideo" class="camera-video" autoplay playsinline></video>
+        
+        <!-- トップメニューバー -->
+        <div class="top-menu">
+            <div class="menu-left">
+                <button class="btn menu-btn" onclick="exitFullscreen()">
+                    <i class="fas fa-times"></i> 終了
+                </button>
+                <button class="btn menu-btn" onclick="toggleBlackboardEdit()">
+                    <i class="fas fa-edit"></i> 黒板編集
+                </button>
+            </div>
+            <div class="menu-right">
+                <button class="btn menu-btn" onclick="toggleQualityPanel()">
+                    <i class="fas fa-sliders-h"></i> 画質調整
+                </button>
+                <button class="btn menu-btn" onclick="toggleBlackboard()">
+                    <i class="fas fa-chalkboard"></i> 黒板表示
+                </button>
+            </div>
+        </div>
+        
+        <!-- 黒板オーバーレイ -->
+        <div id="blackboardOverlay" class="blackboard-overlay" style="display: none;">
+            <table class="blackboard-table">
+                <tr>
+                    <th>調査番号</th>
+                    <td id="surveyNumber">-</td>
+                </tr>
+                <tr>
+                    <th>建物番号</th>
+                    <td id="buildingNumber">-</td>
+                </tr>
+                <tr>
+                    <th>所有者</th>
+                    <td id="owner">-</td>
+                </tr>
+                <tr>
+                    <th>傷の種類</th>
+                    <td id="damageType">-</td>
+                </tr>
+                <tr>
+                    <th>寸法</th>
+                    <td id="damageSize">-</td>
+                </tr>
+                <tr>
+                    <th>損傷箇所</th>
+                    <td id="damageLocation">-</td>
+                </tr>
+                <tr>
+                    <th>写真番号</th>
+                    <td id="photoNumber">-</td>
+                </tr>
+                <tr>
+                    <th>撮影日</th>
+                    <td id="dateTaken">-</td>
+                </tr>
+            </table>
+        </div>
+        
+        <!-- 黒板編集パネル -->
+        <div id="blackboardEditPanel" class="blackboard-edit-panel">
+            <h6><i class="fas fa-edit"></i> 黒板内容編集</h6>
+            
+            <!-- プロジェクト選択 -->
+            <div class="form-group">
+                <label>プロジェクト</label>
+                <select id="projectSelect" class="form-control" onchange="loadSubprojects()">
+                    <option value="">プロジェクトを選択...</option>
+                </select>
+            </div>
+            
+            <!-- サブプロジェクト選択 -->
+            <div class="form-group">
+                <label>エリア</label>
+                <select id="subprojectSelect" class="form-control">
+                    <option value="">エリアを選択...</option>
+                </select>
+            </div>
+            
+            <!-- 動的な黒板編集フィールド（テンプレートに基づいて生成される） -->
+            <div id="dynamicEditFields">
+                <!-- ここに動的フィールドが挿入される -->
+            </div>
+            
+            <!-- デフォルトの黒板内容（テンプレートが選択されていない場合のみ表示） -->
+            <div id="defaultEditFields">
+                <div class="form-group">
+                    <label>調査番号</label>
+                    <input type="text" id="surveyNumberInput" class="form-control" onchange="updateBlackboard()" placeholder="調査番号を入力">
+                </div>
+                
+                <div class="form-group">
+                    <label>建物番号</label>
+                    <input type="text" id="buildingNumberInput" class="form-control" onchange="updateBlackboard()" placeholder="建物番号を入力">
+                </div>
+                
+                <div class="form-group">
+                    <label>所有者</label>
+                    <input type="text" id="ownerInput" class="form-control" onchange="updateBlackboard()" placeholder="所有者を入力">
+                </div>
+                
+                <div class="form-group">
+                    <label>傷の種類</label>
+                    <select id="damageTypeInput" class="form-control" onchange="updateBlackboard()">
+                        <option value="">選択してください</option>
+                        <option value="ひび割れ">ひび割れ</option>
+                        <option value="剥離">剥離</option>
+                        <option value="汚れ">汚れ</option>
+                        <option value="欠け">欠け</option>
+                        <option value="変色">変色</option>
+                        <option value="その他">その他</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>寸法（縦×横cm）</label>
+                    <input type="text" id="damageSizeInput" class="form-control" onchange="updateBlackboard()" placeholder="例: 10×5">
+                </div>
+                
+                <div class="form-group">
+                    <label>損傷箇所</label>
+                    <input type="text" id="damageLocationInput" class="form-control" onchange="updateBlackboard()" placeholder="損傷箇所を入力">
+                </div>
+                
+                <div class="form-group">
+                    <label>写真番号</label>
+                    <input type="text" id="photoNumberInput" class="form-control" onchange="updateBlackboard()" placeholder="自動採番">
+                </div>
+            </div>
+            
+            <!-- テンプレート選択 -->
+            <div class="form-group">
+                <label>テンプレート</label>
+                <select id="templateSelect" class="form-control">
+                    <option value="">テンプレートを選択...</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- 画質調整パネル -->
+        <div id="qualityPanel" class="quality-panel">
+            <h6><i class="fas fa-sliders-h"></i> 画質調整</h6>
+            
+            <div class="form-group">
+                <label>解像度</label>
+                <select id="resolutionSelect" class="form-control" onchange="changeResolution()">
+                    <option value="1920x1080">1920×1080 (Full HD)</option>
+                    <option value="1280x720">1280×720 (HD)</option>
+                    <option value="640x480">640×480 (VGA)</option>
+                    <option value="auto">自動</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>明度</label>
+                <input type="range" id="brightnessSlider" class="quality-slider" min="0" max="200" value="100" onchange="adjustImageSettings()">
+                <div class="quality-value" id="brightnessValue">100%</div>
+            </div>
+            
+            <div class="form-group">
+                <label>コントラスト</label>
+                <input type="range" id="contrastSlider" class="quality-slider" min="0" max="200" value="100" onchange="adjustImageSettings()">
+                <div class="quality-value" id="contrastValue">100%</div>
+            </div>
+            
+            <div class="form-group">
+                <label>彩度</label>
+                <input type="range" id="saturationSlider" class="quality-slider" min="0" max="200" value="100" onchange="adjustImageSettings()">
+                <div class="quality-value" id="saturationValue">100%</div>
+            </div>
+            
+            <div class="form-group">
+                <label>フラッシュ</label>
+                <select id="flashSelect" class="form-control" onchange="toggleFlash()">
+                    <option value="off">オフ</option>
+                    <option value="on">オン</option>
+                    <option value="auto">自動</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <button class="btn btn-secondary btn-sm" onclick="resetImageSettings()" style="width: 100%;">
+                    <i class="fas fa-undo"></i> リセット
+                </button>
+            </div>
+        </div>
+        
+        <!-- カメラ操作パネル -->
+        <div class="camera-controls">
+            <button class="btn btn-info" onclick="switchCamera()">
+                <i class="fas fa-sync"></i>
+            </button>
+            <button class="btn btn-success" onclick="toggleBlackboard()">
+                <i class="fas fa-chalkboard"></i>
+            </button>
+            <button class="btn btn-capture" onclick="capturePhoto()">
+                <i class="fas fa-camera"></i>
+            </button>
+            <button class="btn btn-warning" onclick="toggleGrid()">
+                <i class="fas fa-th"></i>
+            </button>
+            <button class="btn btn-primary" onclick="toggleTimer()">
+                <i class="fas fa-stopwatch"></i>
+            </button>
+        </div>
+        
+        <!-- 撮影結果表示エリア -->
+        <div id="captureResult" class="capture-result" style="display: none;">
+            <div class="capture-result-content">
+                <img id="capturedImage" class="captured-image">
+                <div class="capture-result-controls">
+                    <button class="btn btn-primary" onclick="savePhoto()">
+                        <i class="fas fa-save"></i> 保存
+                    </button>
+                    <button class="btn btn-secondary" onclick="retakePhoto()">
+                        <i class="fas fa-redo"></i> 再撮影
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- グリッド表示 -->
+        <div id="cameraGrid" class="camera-grid" style="display: none;">
+            <div class="grid-line grid-vertical" style="left: 33.33%"></div>
+            <div class="grid-line grid-vertical" style="left: 66.66%"></div>
+            <div class="grid-line grid-horizontal" style="top: 33.33%"></div>
+            <div class="grid-line grid-horizontal" style="top: 66.66%"></div>
+        </div>
+        
+        <!-- タイマー表示 -->
+        <div id="timerDisplay" class="timer-display" style="display: none;">
+            <div class="timer-count">3</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', path='/js/camera.js') }}"></script>
+{% endblock %}

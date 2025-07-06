@@ -1,0 +1,1692 @@
+{% extends "base.html" %}
+
+{% block title %}撮影 - 工損調査システム{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 全画面撮影画面 */
+    .camera-fullscreen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: #000;
+        z-index: 999;
+        overflow: hidden;
+    }
+    
+    .camera-container {
+        position: relative;
+        width: 100%;
+        height: 100vh;
+        background: #000;
+        overflow: hidden;
+    }
+    
+    .camera-video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    /* 撮影コントロール */
+    .camera-controls {
+        position: absolute;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 15px;
+        z-index: 10;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 15px 25px;
+        border-radius: 50px;
+    }
+    
+    .camera-controls .btn {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        border: 3px solid white;
+        transition: all 0.3s ease;
+    }
+    
+    .camera-controls .btn:hover {
+        transform: scale(1.1);
+    }
+    
+    .camera-controls .btn-capture {
+        width: 80px;
+        height: 80px;
+        background: #ff4444;
+        border-color: white;
+    }
+    
+    /* 黒板オーバーレイ */
+    .blackboard-overlay {
+        position: absolute;
+        top: 50px;
+        right: 50px;
+        background: rgba(255, 255, 255, 0.95);
+        padding: 15px;
+        border-radius: 10px;
+        border: 2px solid #333;
+        min-width: 300px;
+        max-width: 400px;
+        z-index: 10;
+        cursor: move;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .blackboard-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+    }
+    
+    .blackboard-table th,
+    .blackboard-table td {
+        border: 1px solid #333;
+        padding: 4px 6px;
+        text-align: left;
+    }
+    
+    .blackboard-table th {
+        background: #f0f0f0;
+        font-weight: bold;
+        font-size: 10px;
+    }
+    
+    .blackboard-table td {
+        background: white;
+        font-size: 11px;
+    }
+    
+    /* トップメニューバー */
+    .top-menu {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 60px;
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), transparent);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        z-index: 15;
+    }
+    
+    .menu-left,
+    .menu-right {
+        display: flex;
+        gap: 10px;
+    }
+    
+    .menu-btn {
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 8px 15px;
+        border-radius: 20px;
+        font-size: 14px;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(10px);
+    }
+    
+    .menu-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+        color: white;
+    }
+    
+    /* 黒板編集パネル */
+    .blackboard-edit-panel {
+        position: absolute;
+        top: 70px;
+        left: 20px;
+        width: 320px;
+        max-height: calc(100vh - 200px);
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 10px;
+        padding: 20px;
+        z-index: 12;
+        overflow-y: auto;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+    
+    .blackboard-edit-panel.open {
+        transform: translateX(0);
+    }
+    
+    .blackboard-edit-panel h6 {
+        margin-bottom: 15px;
+        color: #333;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 5px;
+    }
+    
+    .blackboard-edit-panel .form-group {
+        margin-bottom: 12px;
+    }
+    
+    .blackboard-edit-panel label {
+        font-size: 12px;
+        font-weight: bold;
+        color: #555;
+        margin-bottom: 3px;
+        display: block;
+    }
+    
+    .blackboard-edit-panel input,
+    .blackboard-edit-panel select {
+        font-size: 12px;
+        padding: 6px 8px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        width: 100%;
+    }
+    
+    /* 画質調整パネル */
+    .quality-panel {
+        position: absolute;
+        top: 70px;
+        right: 20px;
+        width: 280px;
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 10px;
+        padding: 20px;
+        z-index: 12;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+    }
+    
+    .quality-panel.open {
+        transform: translateX(0);
+    }
+    
+    .quality-panel h6 {
+        margin-bottom: 15px;
+        color: #333;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 5px;
+    }
+    
+    .quality-slider {
+        width: 100%;
+        margin: 10px 0;
+    }
+    
+    .quality-value {
+        text-align: center;
+        font-weight: bold;
+        color: #007bff;
+        margin-top: 5px;
+    }
+    
+    /* レスポンシブ対応 */
+    @media (max-width: 768px) {
+        .blackboard-overlay {
+            top: 80px;
+            right: 20px;
+            left: 20px;
+            width: auto;
+            min-width: auto;
+            max-width: none;
+        }
+        
+        .blackboard-edit-panel,
+        .quality-panel {
+            width: calc(100vw - 40px);
+            left: 20px;
+            right: 20px;
+        }
+        
+        .quality-panel {
+            top: 140px;
+        }
+        
+        .camera-controls {
+            bottom: 20px;
+            padding: 10px 20px;
+            gap: 10px;
+        }
+        
+        .camera-controls .btn {
+            width: 50px;
+            height: 50px;
+            font-size: 1.2rem;
+        }
+        
+        .camera-controls .btn-capture {
+            width: 70px;
+            height: 70px;
+        }
+        
+        .top-menu {
+            height: 50px;
+            padding: 0 10px;
+        }
+        
+        .menu-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+    }
+    
+    /* 隠すためのナビゲーション */
+    .hide-nav {
+        display: none !important;
+    }
+    
+    /* 撮影結果表示 */
+    .capture-result {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.9);
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .capture-result-content {
+        max-width: 90vw;
+        max-height: 90vh;
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+    }
+    
+    .captured-image {
+        max-width: 100%;
+        max-height: 70vh;
+        border-radius: 5px;
+        margin-bottom: 20px;
+    }
+    
+    .capture-result-controls {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+    }
+    
+    /* グリッド表示 */
+    .camera-grid {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 5;
+    }
+    
+    .grid-line {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.5);
+    }
+    
+    .grid-vertical {
+        width: 1px;
+        height: 100%;
+    }
+    
+    .grid-horizontal {
+        height: 1px;
+        width: 100%;
+    }
+    
+    /* タイマー表示 */
+    .timer-display {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 25;
+    }
+    
+    .timer-count {
+        font-size: 120px;
+        font-weight: bold;
+        color: white;
+        text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        animation: timerPulse 1s ease-in-out;
+    }
+    
+    @keyframes timerPulse {
+        0% { transform: scale(0.5); opacity: 0; }
+        50% { transform: scale(1.2); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 全画面カメラ表示エリア -->
+<div class="camera-fullscreen">
+    <div class="camera-container">
+        <video id="cameraVideo" class="camera-video" autoplay playsinline></video>
+        
+        <!-- トップメニューバー -->
+        <div class="top-menu">
+            <div class="menu-left">
+                <button class="btn menu-btn" onclick="exitFullscreen()">
+                    <i class="fas fa-times"></i> 終了
+                </button>
+                <button class="btn menu-btn" onclick="toggleBlackboardEdit()">
+                    <i class="fas fa-edit"></i> 黒板編集
+                </button>
+            </div>
+            <div class="menu-right">
+                <button class="btn menu-btn" onclick="toggleQualityPanel()">
+                    <i class="fas fa-sliders-h"></i> 画質調整
+                </button>
+                <button class="btn menu-btn" onclick="toggleBlackboard()">
+                    <i class="fas fa-chalkboard"></i> 黒板表示
+                </button>
+            </div>
+        </div>
+        
+        <!-- 黒板オーバーレイ -->
+        <div id="blackboardOverlay" class="blackboard-overlay" style="display: none;">
+            <table class="blackboard-table">
+                <tr>
+                    <th>調査番号</th>
+                    <td id="surveyNumber">-</td>
+                </tr>
+                <tr>
+                    <th>建物番号</th>
+                    <td id="buildingNumber">-</td>
+                </tr>
+                <tr>
+                    <th>所有者</th>
+                    <td id="owner">-</td>
+                </tr>
+                <tr>
+                    <th>傷の種類</th>
+                    <td id="damageType">-</td>
+                </tr>
+                <tr>
+                    <th>寸法</th>
+                    <td id="damageSize">-</td>
+                </tr>
+                <tr>
+                    <th>損傷箇所</th>
+                    <td id="damageLocation">-</td>
+                </tr>
+                <tr>
+                    <th>写真番号</th>
+                    <td id="photoNumber">-</td>
+                </tr>
+                <tr>
+                    <th>撮影日</th>
+                    <td id="dateTaken">-</td>
+                </tr>
+            </table>
+        </div>
+        
+        <!-- 黒板編集パネル -->
+        <div id="blackboardEditPanel" class="blackboard-edit-panel">
+            <h6><i class="fas fa-edit"></i> 黒板内容編集</h6>
+            
+            <!-- プロジェクト選択 -->
+            <div class="form-group">
+                <label>プロジェクト</label>
+                <select id="projectSelect" class="form-control" onchange="loadSubprojects()">
+                    <option value="">プロジェクトを選択...</option>
+                </select>
+            </div>
+            
+            <!-- サブプロジェクト選択 -->
+            <div class="form-group">
+                <label>エリア</label>
+                <select id="subprojectSelect" class="form-control">
+                    <option value="">エリアを選択...</option>
+                </select>
+            </div>
+            
+            <!-- 黒板内容 -->
+            <div class="form-group">
+                <label>調査番号</label>
+                <input type="text" id="surveyNumberInput" class="form-control" onchange="updateBlackboard()" placeholder="調査番号を入力">
+            </div>
+            
+            <div class="form-group">
+                <label>建物番号</label>
+                <input type="text" id="buildingNumberInput" class="form-control" onchange="updateBlackboard()" placeholder="建物番号を入力">
+            </div>
+            
+            <div class="form-group">
+                <label>所有者</label>
+                <input type="text" id="ownerInput" class="form-control" onchange="updateBlackboard()" placeholder="所有者を入力">
+            </div>
+            
+            <div class="form-group">
+                <label>傷の種類</label>
+                <select id="damageTypeInput" class="form-control" onchange="updateBlackboard()">
+                    <option value="">選択してください</option>
+                    <option value="ひび割れ">ひび割れ</option>
+                    <option value="剥離">剥離</option>
+                    <option value="汚れ">汚れ</option>
+                    <option value="欠け">欠け</option>
+                    <option value="変色">変色</option>
+                    <option value="その他">その他</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>寸法（縦×横cm）</label>
+                <input type="text" id="damageSizeInput" class="form-control" onchange="updateBlackboard()" placeholder="例: 10×5">
+            </div>
+            
+            <div class="form-group">
+                <label>損傷箇所</label>
+                <input type="text" id="damageLocationInput" class="form-control" onchange="updateBlackboard()" placeholder="損傷箇所を入力">
+            </div>
+            
+            <div class="form-group">
+                <label>写真番号</label>
+                <input type="text" id="photoNumberInput" class="form-control" onchange="updateBlackboard()" placeholder="自動採番">
+            </div>
+            
+            <!-- テンプレート選択 -->
+            <div class="form-group">
+                <label>テンプレート</label>
+                <select id="templateSelect" class="form-control">
+                    <option value="">テンプレートを選択...</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- 画質調整パネル -->
+        <div id="qualityPanel" class="quality-panel">
+            <h6><i class="fas fa-sliders-h"></i> 画質調整</h6>
+            
+            <div class="form-group">
+                <label>解像度</label>
+                <select id="resolutionSelect" class="form-control" onchange="changeResolution()">
+                    <option value="1920x1080">1920×1080 (Full HD)</option>
+                    <option value="1280x720">1280×720 (HD)</option>
+                    <option value="640x480">640×480 (VGA)</option>
+                    <option value="auto">自動</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>明度</label>
+                <input type="range" id="brightnessSlider" class="quality-slider" min="0" max="200" value="100" onchange="adjustImageSettings()">
+                <div class="quality-value" id="brightnessValue">100%</div>
+            </div>
+            
+            <div class="form-group">
+                <label>コントラスト</label>
+                <input type="range" id="contrastSlider" class="quality-slider" min="0" max="200" value="100" onchange="adjustImageSettings()">
+                <div class="quality-value" id="contrastValue">100%</div>
+            </div>
+            
+            <div class="form-group">
+                <label>彩度</label>
+                <input type="range" id="saturationSlider" class="quality-slider" min="0" max="200" value="100" onchange="adjustImageSettings()">
+                <div class="quality-value" id="saturationValue">100%</div>
+            </div>
+            
+            <div class="form-group">
+                <label>フラッシュ</label>
+                <select id="flashSelect" class="form-control" onchange="toggleFlash()">
+                    <option value="off">オフ</option>
+                    <option value="on">オン</option>
+                    <option value="auto">自動</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <button class="btn btn-secondary btn-sm" onclick="resetImageSettings()" style="width: 100%;">
+                    <i class="fas fa-undo"></i> リセット
+                </button>
+            </div>
+        </div>
+        
+        <!-- カメラ操作パネル -->
+        <div class="camera-controls">
+            <button class="btn btn-info" onclick="switchCamera()">
+                <i class="fas fa-sync"></i>
+            </button>
+            <button class="btn btn-success" onclick="toggleBlackboard()">
+                <i class="fas fa-chalkboard"></i>
+            </button>
+            <button class="btn btn-capture" onclick="capturePhoto()">
+                <i class="fas fa-camera"></i>
+            </button>
+            <button class="btn btn-warning" onclick="toggleGrid()">
+                <i class="fas fa-th"></i>
+            </button>
+            <button class="btn btn-primary" onclick="toggleTimer()">
+                <i class="fas fa-stopwatch"></i>
+            </button>
+        </div>
+        
+        <!-- 撮影結果表示エリア -->
+        <div id="captureResult" class="capture-result" style="display: none;">
+            <div class="capture-result-content">
+                <img id="capturedImage" class="captured-image">
+                <div class="capture-result-controls">
+                    <button class="btn btn-primary" onclick="savePhoto()">
+                        <i class="fas fa-save"></i> 保存
+                    </button>
+                    <button class="btn btn-secondary" onclick="retakePhoto()">
+                        <i class="fas fa-redo"></i> 再撮影
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- グリッド表示 -->
+        <div id="cameraGrid" class="camera-grid" style="display: none;">
+            <div class="grid-line grid-vertical" style="left: 33.33%"></div>
+            <div class="grid-line grid-vertical" style="left: 66.66%"></div>
+            <div class="grid-line grid-horizontal" style="top: 33.33%"></div>
+            <div class="grid-line grid-horizontal" style="top: 66.66%"></div>
+        </div>
+        
+        <!-- タイマー表示 -->
+        <div id="timerDisplay" class="timer-display" style="display: none;">
+            <div class="timer-count">3</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentStream = null;
+let currentCamera = 'user';
+let blackboardVisible = false;
+let capturedImageData = null;
+let gridVisible = false;
+let timerActive = false;
+let currentResolution = { width: 1920, height: 1080 };
+
+// ページ読み込み時の初期化
+document.addEventListener('DOMContentLoaded', function() {
+    // ナビゲーションを隠す
+    document.querySelector('.navbar').classList.add('hide-nav');
+    document.querySelector('main').style.margin = '0';
+    document.querySelector('main').style.padding = '0';
+    
+    // カメラの初期化
+    initCamera();
+    
+    // データの読み込み
+    loadProjects();
+    loadTemplates().then(() => {
+        // URLパラメータからテンプレートIDを取得
+        const urlParams = new URLSearchParams(window.location.search);
+        const templateId = urlParams.get('template');
+        const projectId = urlParams.get('project');
+        const subprojectId = urlParams.get('subproject');
+        
+        // テンプレートIDがある場合は自動適用
+        if (templateId) {
+            document.getElementById('templateSelect').value = templateId;
+            applyTemplate();
+        }
+        
+        // プロジェクトIDがある場合は自動選択
+        if (projectId) {
+            document.getElementById('projectSelect').value = projectId;
+            loadSubprojects().then(() => {
+                if (subprojectId) {
+                    document.getElementById('subprojectSelect').value = subprojectId;
+                }
+            });
+        }
+    });
+    
+    // 黒板のドラッグ機能の設定
+    setupBlackboardDrag();
+    
+    // 撮影日を設定
+    document.getElementById('dateTaken').textContent = new Date().toLocaleDateString('ja-JP');
+    
+    // 写真番号の自動採番
+    generatePhotoNumber();
+});
+
+// カメラの初期化
+async function initCamera() {
+    try {
+        const constraints = {
+            video: {
+                facingMode: currentCamera,
+                width: { ideal: currentResolution.width },
+                height: { ideal: currentResolution.height }
+            }
+        };
+        
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+        
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const video = document.getElementById('cameraVideo');
+        video.srcObject = currentStream;
+        
+        // 画質設定を適用
+        applyImageFilters();
+        
+    } catch (error) {
+        console.error('カメラの初期化に失敗しました:', error);
+        alert('カメラの初期化に失敗しました。カメラの使用を許可してください。');
+    }
+}
+
+// 解像度変更
+async function changeResolution() {
+    const select = document.getElementById('resolutionSelect');
+    const value = select.value;
+    
+    if (value === 'auto') {
+        currentResolution = { width: 1920, height: 1080 };
+    } else {
+        const [width, height] = value.split('x').map(Number);
+        currentResolution = { width, height };
+    }
+    
+    await initCamera();
+}
+
+// 画質調整
+function adjustImageSettings() {
+    const brightness = document.getElementById('brightnessSlider').value;
+    const contrast = document.getElementById('contrastSlider').value;
+    const saturation = document.getElementById('saturationSlider').value;
+    
+    document.getElementById('brightnessValue').textContent = brightness + '%';
+    document.getElementById('contrastValue').textContent = contrast + '%';
+    document.getElementById('saturationValue').textContent = saturation + '%';
+    
+    applyImageFilters();
+}
+
+// フィルター適用
+function applyImageFilters() {
+    const video = document.getElementById('cameraVideo');
+    const brightness = document.getElementById('brightnessSlider').value;
+    const contrast = document.getElementById('contrastSlider').value;
+    const saturation = document.getElementById('saturationSlider').value;
+    
+    video.style.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
+}
+
+// 画質設定リセット
+function resetImageSettings() {
+    document.getElementById('brightnessSlider').value = 100;
+    document.getElementById('contrastSlider').value = 100;
+    document.getElementById('saturationSlider').value = 100;
+    document.getElementById('resolutionSelect').value = '1920x1080';
+    
+    adjustImageSettings();
+    changeResolution();
+}
+
+// フラッシュ切替
+function toggleFlash() {
+    const flashSelect = document.getElementById('flashSelect');
+    const value = flashSelect.value;
+    
+    if (currentStream) {
+        const track = currentStream.getVideoTracks()[0];
+        const capabilities = track.getCapabilities();
+        
+        if (capabilities.torch) {
+            track.applyConstraints({
+                advanced: [{ torch: value === 'on' }]
+            }).catch(error => {
+                console.warn('フラッシュの制御に失敗しました:', error);
+            });
+        }
+    }
+}
+
+// カメラ切り替え
+async function switchCamera() {
+    currentCamera = currentCamera === 'user' ? 'environment' : 'user';
+    await initCamera();
+}
+
+// 黒板表示切替
+function toggleBlackboard() {
+    blackboardVisible = !blackboardVisible;
+    const overlay = document.getElementById('blackboardOverlay');
+    overlay.style.display = blackboardVisible ? 'block' : 'none';
+}
+
+// 黒板編集パネル切替
+function toggleBlackboardEdit() {
+    const panel = document.getElementById('blackboardEditPanel');
+    panel.classList.toggle('open');
+    
+    // 画質パネルが開いていたら閉じる
+    const qualityPanel = document.getElementById('qualityPanel');
+    qualityPanel.classList.remove('open');
+}
+
+// 画質調整パネル切替
+function toggleQualityPanel() {
+    const panel = document.getElementById('qualityPanel');
+    panel.classList.toggle('open');
+    
+    // 黒板編集パネルが開いていたら閉じる
+    const editPanel = document.getElementById('blackboardEditPanel');
+    editPanel.classList.remove('open');
+}
+
+// グリッド表示切替
+function toggleGrid() {
+    gridVisible = !gridVisible;
+    const grid = document.getElementById('cameraGrid');
+    grid.style.display = gridVisible ? 'block' : 'none';
+}
+
+// タイマー撮影
+function toggleTimer() {
+    if (timerActive) return;
+    
+    timerActive = true;
+    const timerDisplay = document.getElementById('timerDisplay');
+    const timerCount = timerDisplay.querySelector('.timer-count');
+    
+    timerDisplay.style.display = 'flex';
+    
+    let count = 3;
+    timerCount.textContent = count;
+    
+    const countdown = setInterval(() => {
+        count--;
+        if (count > 0) {
+            timerCount.textContent = count;
+        } else {
+            clearInterval(countdown);
+            timerDisplay.style.display = 'none';
+            capturePhoto();
+            timerActive = false;
+        }
+    }, 1000);
+}
+
+// 黒板内容更新
+function updateBlackboard() {
+    document.getElementById('surveyNumber').textContent = document.getElementById('surveyNumberInput').value || '-';
+    document.getElementById('buildingNumber').textContent = document.getElementById('buildingNumberInput').value || '-';
+    document.getElementById('owner').textContent = document.getElementById('ownerInput').value || '-';
+    document.getElementById('damageType').textContent = document.getElementById('damageTypeInput').value || '-';
+    document.getElementById('damageSize').textContent = document.getElementById('damageSizeInput').value || '-';
+    document.getElementById('damageLocation').textContent = document.getElementById('damageLocationInput').value || '-';
+    document.getElementById('photoNumber').textContent = document.getElementById('photoNumberInput').value || '-';
+}
+
+// 写真番号自動採番
+function generatePhotoNumber() {
+    const now = new Date();
+    const dateStr = now.getFullYear().toString().slice(-2) + 
+                   (now.getMonth() + 1).toString().padStart(2, '0') + 
+                   now.getDate().toString().padStart(2, '0');
+    const timeStr = now.getHours().toString().padStart(2, '0') + 
+                   now.getMinutes().toString().padStart(2, '0');
+    
+    const photoNumber = `${dateStr}-${timeStr}`;
+    document.getElementById('photoNumberInput').value = photoNumber;
+    updateBlackboard();
+}
+
+// 写真撮影
+function capturePhoto() {
+    const video = document.getElementById('cameraVideo');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    // ビデオフレームを描画
+    ctx.drawImage(video, 0, 0);
+    
+    // 黒板が表示されている場合、オーバーレイを合成
+    if (blackboardVisible) {
+        drawBlackboardOnCanvas(ctx, canvas.width, canvas.height);
+    }
+    
+    // 結果を表示
+    capturedImageData = canvas.toDataURL('image/jpeg', 0.9);
+    document.getElementById('capturedImage').src = capturedImageData;
+    document.getElementById('captureResult').style.display = 'flex';
+    
+    // 撮影音効果（オプション）
+    playShutterSound();
+}
+
+// 黒板をcanvasに描画
+function drawBlackboardOnCanvas(ctx, canvasWidth, canvasHeight) {
+    const blackboard = document.getElementById('blackboardOverlay');
+    const rect = blackboard.getBoundingClientRect();
+    const videoRect = document.getElementById('cameraVideo').getBoundingClientRect();
+    
+    // 黒板の位置とサイズを計算
+    const scaleX = canvasWidth / videoRect.width;
+    const scaleY = canvasHeight / videoRect.height;
+    
+    const x = (rect.left - videoRect.left) * scaleX;
+    const y = (rect.top - videoRect.top) * scaleY;
+    const width = rect.width * scaleX;
+    const height = rect.height * scaleY;
+    
+    // 背景を描画
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillRect(x, y, width, height);
+    
+    // 枠線を描画
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, width, height);
+    
+    // テキストを描画
+    ctx.fillStyle = '#333';
+    ctx.font = `${Math.max(12 * scaleX, 10)}px Arial`;
+    
+    const data = [
+        ['調査番号', document.getElementById('surveyNumber').textContent],
+        ['建物番号', document.getElementById('buildingNumber').textContent],
+        ['所有者', document.getElementById('owner').textContent],
+        ['傷の種類', document.getElementById('damageType').textContent],
+        ['寸法', document.getElementById('damageSize').textContent],
+        ['損傷箇所', document.getElementById('damageLocation').textContent],
+        ['写真番号', document.getElementById('photoNumber').textContent],
+        ['撮影日', document.getElementById('dateTaken').textContent]
+    ];
+    
+    const rowHeight = height / data.length;
+    data.forEach((row, index) => {
+        const rowY = y + (index * rowHeight);
+        ctx.fillText(row[0], x + 10, rowY + rowHeight * 0.3);
+        ctx.fillText(row[1], x + width * 0.4, rowY + rowHeight * 0.3);
+        
+        // 区切り線
+        if (index < data.length - 1) {
+            ctx.beginPath();
+            ctx.moveTo(x, rowY + rowHeight);
+            ctx.lineTo(x + width, rowY + rowHeight);
+            ctx.stroke();
+        }
+    });
+}
+
+// 撮影音再生
+function playShutterSound() {
+    // Web Audio APIを使用して簡単な撮影音を生成
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.1);
+    } catch (error) {
+        console.log('撮影音の再生に失敗しました:', error);
+    }
+}
+
+// 写真保存
+async function savePhoto() {
+    const projectId = document.getElementById('projectSelect').value;
+    const subprojectId = document.getElementById('subprojectSelect').value;
+    
+    if (!projectId) {
+        alert('プロジェクトを選択してください');
+        return;
+    }
+    
+    if (!capturedImageData) {
+        alert('撮影された画像がありません');
+        return;
+    }
+    
+    try {
+        // Base64データをBlobに変換
+        const response = await fetch(capturedImageData);
+        const blob = await response.blob();
+        
+        // FormDataを作成
+        const formData = new FormData();
+        formData.append('file', blob, 'captured_photo.jpg');
+        formData.append('project_id', projectId);
+        if (subprojectId) {
+            formData.append('subproject_id', subprojectId);
+        }
+        
+        // サーバーに送信
+        const saveResponse = await fetch('/api/photos/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (saveResponse.ok) {
+            alert('写真が保存されました');
+            retakePhoto();
+            generatePhotoNumber(); // 次の写真番号を生成
+        } else {
+            throw new Error('保存に失敗しました');
+        }
+    } catch (error) {
+        console.error('写真の保存に失敗しました:', error);
+        alert('写真の保存に失敗しました');
+    }
+}
+
+// 再撮影
+function retakePhoto() {
+    document.getElementById('captureResult').style.display = 'none';
+    capturedImageData = null;
+}
+
+// 全画面終了
+function exitFullscreen() {
+    console.debug('撮影画面終了処理を開始');
+    
+    try {
+        // カメラを停止
+        if (currentStream) {
+            console.debug('カメラストリームを停止中...');
+            currentStream.getTracks().forEach(track => {
+                track.stop();
+                console.debug('カメラトラックを停止:', track.kind);
+            });
+            currentStream = null;
+            console.debug('カメラストリーム停止完了');
+        }
+        
+        // ナビゲーションを表示
+        const navbar = document.querySelector('.navbar');
+        const main = document.querySelector('main');
+        
+        if (navbar) {
+            navbar.classList.remove('hide-nav');
+            console.debug('ナビゲーションバーを表示');
+        }
+        
+        if (main) {
+            main.style.margin = '';
+            main.style.padding = '';
+            console.debug('メインコンテナのスタイルをリセット');
+        }
+        
+        // ページ遷移の実行
+        console.debug('ページ遷移を実行...');
+        console.debug('document.referrer:', document.referrer);
+        console.debug('current location:', window.location.href);
+        
+        // 強制的にホームページに戻る（確実性を重視）
+        setTimeout(() => {
+            console.debug('ホームページに遷移');
+            window.location.href = '/';
+        }, 100);
+        
+    } catch (error) {
+        console.error('撮影画面終了処理でエラー:', error);
+        debugError(error, '撮影画面終了');
+        
+        // エラーが発生してもホームページに戻る
+        window.location.href = '/';
+    }
+}
+
+// プロジェクト一覧の読み込み
+async function loadProjects() {
+    try {
+        const response = await fetch('/api/projects/');
+        const projects = await response.json();
+        
+        const select = document.getElementById('projectSelect');
+        select.innerHTML = '<option value="">プロジェクトを選択...</option>';
+        
+        projects.forEach(project => {
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = project.name;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('プロジェクトの読み込みに失敗しました:', error);
+    }
+}
+
+// サブプロジェクト一覧の読み込み
+async function loadSubprojects() {
+    const projectId = document.getElementById('projectSelect').value;
+    const select = document.getElementById('subprojectSelect');
+    
+    select.innerHTML = '<option value="">エリアを選択...</option>';
+    
+    if (!projectId) return Promise.resolve();
+    
+    try {
+        const response = await fetch(`/api/subprojects/project/${projectId}`);
+        const subprojects = await response.json();
+        
+        subprojects.forEach(subproject => {
+            const option = document.createElement('option');
+            option.value = subproject.id;
+            option.textContent = subproject.name;
+            select.appendChild(option);
+        });
+        
+        return Promise.resolve();
+    } catch (error) {
+        console.error('サブプロジェクトの読み込みに失敗しました:', error);
+        return Promise.reject(error);
+    }
+}
+
+// テンプレート一覧の読み込み
+async function loadTemplates() {
+    try {
+        const response = await fetch('/api/templates/');
+        const templates = await response.json();
+        
+        const select = document.getElementById('templateSelect');
+        select.innerHTML = '<option value="">テンプレートを選択...</option>';
+        
+        templates.forEach(template => {
+            const option = document.createElement('option');
+            option.value = template.id;
+            option.textContent = template.name;
+            select.appendChild(option);
+        });
+        
+        // テンプレート選択時のイベントリスナーを追加
+        select.addEventListener('change', applyTemplate);
+        
+        return Promise.resolve();
+    } catch (error) {
+        console.error('テンプレートの読み込みに失敗しました:', error);
+        return Promise.reject(error);
+    }
+}
+
+// テンプレート適用
+async function applyTemplate() {
+    const templateId = document.getElementById('templateSelect').value;
+    
+    if (!templateId) {
+        // テンプレートがクリアされた場合、黒板を初期状態に戻す
+        resetBlackboardToDefault();
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/templates/${templateId}`);
+        const template = await response.json();
+        
+        // テンプレートデータから黒板を更新
+        updateBlackboardFromTemplate(template);
+        
+    } catch (error) {
+        console.error('テンプレートの適用に失敗しました:', error);
+        alert('テンプレートの適用に失敗しました');
+    }
+}
+
+// テンプレートから黒板を更新
+function updateBlackboardFromTemplate(template) {
+    try {
+        // Excelレイアウト情報がある場合は、実際のExcelレイアウトを適用
+        if (template.cell_data && template.layout_config && template.cell_styles) {
+            applyExcelLayoutToBlackboard(template);
+            // 入力フィールドも動的に生成
+            generateDynamicInputFields(template);
+        } else {
+            // フォールバック: 基本的な設定のみ適用
+            applyBasicTemplateSettings(template);
+        }
+    } catch (error) {
+        console.error('テンプレートの適用に失敗しました:', error);
+        applyBasicTemplateSettings(template);
+    }
+}
+
+// テンプレートに基づいて動的に入力フィールドを生成
+function generateDynamicInputFields(template) {
+    try {
+        const cellData = JSON.parse(template.cell_data);
+        const cellStyles = JSON.parse(template.cell_styles);
+        
+        // 黒板編集パネルのフィールド部分を取得
+        const editPanel = document.getElementById('blackboardEditPanel');
+        
+        // 既存の動的フィールドを削除
+        const existingDynamicFields = editPanel.querySelectorAll('.dynamic-field');
+        existingDynamicFields.forEach(field => field.remove());
+        
+        // テンプレート選択フィールドの前に動的フィールドを挿入
+        const templateSelectGroup = editPanel.querySelector('.form-group:has(#templateSelect)');
+        
+        // セルデータから入力可能なフィールドを特定
+        const inputFields = identifyInputFields(cellData, cellStyles);
+        
+        // 動的フィールドを生成
+        inputFields.forEach((fieldInfo, index) => {
+            const fieldGroup = createDynamicInputField(fieldInfo, index);
+            editPanel.insertBefore(fieldGroup, templateSelectGroup);
+        });
+        
+        console.debug('\u52d5\u7684\u5165\u529b\u30d5\u30a3\u30fc\u30eb\u30c9\u3092\u751f\u6210\u3057\u307e\u3057\u305f:', inputFields.length, '\u500b');
+        
+    } catch (error) {
+        console.error('\u52d5\u7684\u5165\u529b\u30d5\u30a3\u30fc\u30eb\u30c9\u306e\u751f\u6210\u306b\u5931\u6557\u3057\u307e\u3057\u305f:', error);
+    }
+}
+
+// セルデータから入力可能なフィールドを特定
+function identifyInputFields(cellData, cellStyles) {
+    const inputFields = [];
+    
+    // セルデータを解析して、テキストが空または特定のパターンを持つセルを入力フィールドとして識別
+    Object.entries(cellData).forEach(([cellAddress, cellValue]) => {
+        const cellStyle = cellStyles[cellAddress] || {};
+        
+        // 入力フィールドの候補となる条件
+        const isInputCandidate = (
+            !cellValue || // 空のセル
+            cellValue.includes('{{') || // プレースホルダー形式
+            cellValue.includes('[') || // ブラケット形式
+            cellValue.toLowerCase().includes('\u5165\u529b') || // "入力"という文字が含まれる
+            cellValue === '-' || // ダッシュのみ
+            /^\s*$/.test(cellValue) // 空白のみ
+        );
+        
+        if (isInputCandidate) {
+            // フィールド名を推測（隣接セルやヘッダーセルから）
+            const fieldName = guessFieldName(cellAddress, cellData);
+            
+            inputFields.push({
+                cellAddress: cellAddress,
+                fieldName: fieldName,
+                currentValue: cellValue,
+                style: cellStyle,
+                inputType: guessInputType(fieldName, cellValue)
+            });
+        }
+    });
+    
+    return inputFields;
+}
+
+// フィールド名を推測
+function guessFieldName(cellAddress, cellData) {
+    const column = cellAddress.match(/[A-Z]+/)[0];
+    const row = parseInt(cellAddress.match(/\d+/)[0]);
+    
+    // 左側のセル（ラベル用）をチェック
+    const leftColumn = String.fromCharCode(column.charCodeAt(0) - 1);
+    const leftCellAddress = leftColumn + row;
+    if (cellData[leftCellAddress]) {
+        return cellData[leftCellAddress];
+    }
+    
+    // 上側のセル（ヘッダー用）をチェック
+    const headerCellAddress = column + (row - 1);
+    if (cellData[headerCellAddress]) {
+        return cellData[headerCellAddress];
+    }
+    
+    // デフォルト名
+    return `\u30d5\u30a3\u30fc\u30eb\u30c9${cellAddress}`;
+}
+
+// 入力タイプを推測
+function guessInputType(fieldName, currentValue) {
+    const fieldNameLower = fieldName.toLowerCase();
+    
+    if (fieldNameLower.includes('\u65e5\u4ed8') || fieldNameLower.includes('date')) {
+        return 'date';
+    }
+    if (fieldNameLower.includes('\u756a\u53f7') || fieldNameLower.includes('number')) {
+        return 'text';
+    }
+    if (fieldNameLower.includes('\u7a2e\u985e') || fieldNameLower.includes('type')) {
+        return 'select';
+    }
+    if (fieldNameLower.includes('\u5099\u8003') || fieldNameLower.includes('comment')) {
+        return 'textarea';
+    }
+    
+    return 'text';
+}
+
+// 動的入力フィールドを作成
+function createDynamicInputField(fieldInfo, index) {
+    const fieldGroup = document.createElement('div');
+    fieldGroup.className = 'form-group dynamic-field';
+    
+    const label = document.createElement('label');
+    label.textContent = fieldInfo.fieldName;
+    fieldGroup.appendChild(label);
+    
+    let inputElement;
+    const fieldId = `dynamicField_${fieldInfo.cellAddress}`;
+    
+    switch (fieldInfo.inputType) {
+        case 'select':
+            inputElement = document.createElement('select');
+            inputElement.className = 'form-control';
+            inputElement.innerHTML = `
+                <option value="">\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044</option>
+                <option value="\u3072\u3073\u5272\u308c">\u3072\u3073\u5272\u308c</option>
+                <option value="\u5265\u96e2">\u5265\u96e2</option>
+                <option value="\u6c5a\u308c">\u6c5a\u308c</option>
+                <option value="\u6b20\u3051">\u6b20\u3051</option>
+                <option value="\u5909\u8272">\u5909\u8272</option>
+                <option value="\u305d\u306e\u4ed6">\u305d\u306e\u4ed6</option>
+            `;
+            break;
+            
+        case 'textarea':
+            inputElement = document.createElement('textarea');
+            inputElement.className = 'form-control';
+            inputElement.rows = 2;
+            break;
+            
+        case 'date':
+            inputElement = document.createElement('input');
+            inputElement.type = 'date';
+            inputElement.className = 'form-control';
+            inputElement.value = new Date().toISOString().split('T')[0];
+            break;
+            
+        default:
+            inputElement = document.createElement('input');
+            inputElement.type = 'text';
+            inputElement.className = 'form-control';
+            break;
+    }
+    
+    inputElement.id = fieldId;
+    inputElement.placeholder = fieldInfo.currentValue || fieldInfo.fieldName;
+    inputElement.dataset.cellAddress = fieldInfo.cellAddress;
+    
+    // 値が変更された時に黒板を更新
+    inputElement.addEventListener('change', updateDynamicBlackboard);
+    inputElement.addEventListener('input', updateDynamicBlackboard);
+    
+    fieldGroup.appendChild(inputElement);
+    
+    return fieldGroup;
+}
+
+// 動的フィールドの変更を黒板に反映
+function updateDynamicBlackboard() {
+    const dynamicFields = document.querySelectorAll('.dynamic-field input, .dynamic-field select, .dynamic-field textarea');
+    
+    dynamicFields.forEach(field => {
+        const cellAddress = field.dataset.cellAddress;
+        const value = field.value;
+        
+        // 黒板の対応するセルを更新
+        const blackboardCell = document.querySelector(`[data-cell="${cellAddress}"]`);
+        if (blackboardCell) {
+            blackboardCell.textContent = value || '-';
+        }
+    });
+}
+
+// Excelレイアウトを黒板に適用
+function applyExcelLayoutToBlackboard(template) {
+    const cellData = JSON.parse(template.cell_data);
+    const layoutConfig = JSON.parse(template.layout_config);
+    const cellStyles = JSON.parse(template.cell_styles);
+    const mergedCells = template.merged_cells ? JSON.parse(template.merged_cells) : [];
+    
+    const blackboard = document.getElementById('blackboardOverlay');
+    const blackboardTable = blackboard.querySelector('.blackboard-table');
+    
+    // 黒板サイズの調整
+    if (template.default_width && template.default_height) {
+        blackboard.style.width = template.default_width + 'px';
+        blackboard.style.height = template.default_height + 'px';
+    }
+    
+    // Excelレイアウトに基づいてテーブルを再構築
+    blackboardTable.innerHTML = generateExcelBasedTable(template);
+    
+    // セルデータから初期値を設定
+    applyInitialValuesFromExcel(cellData);
+}
+
+// Excelベースのテーブルを生成
+function generateExcelBasedTable(template) {
+    const cellData = JSON.parse(template.cell_data);
+    const layoutConfig = JSON.parse(template.layout_config);
+    const cellStyles = JSON.parse(template.cell_styles);
+    const mergedCells = template.merged_cells ? JSON.parse(template.merged_cells) : [];
+    
+    const maxRow = layoutConfig.max_row;
+    const maxCol = layoutConfig.max_col;
+    const rowHeights = layoutConfig.row_heights || {};
+    const colWidths = layoutConfig.col_widths || {};
+    
+    let tableHTML = '';
+    
+    for (let row = 1; row <= maxRow; row++) {
+        const rowHeight = rowHeights[row] ? `${rowHeights[row] * 1.2}px` : 'auto';
+        tableHTML += `<tr style="height: ${rowHeight};">`;
+        
+        for (let col = 1; col <= maxCol; col++) {
+            const cellAddress = numberToColumn(col) + row;
+            const cellValue = cellData[cellAddress] || '';
+            const cellStyle = cellStyles[cellAddress] || {};
+            
+            // 結合セル情報を取得
+            const mergeInfo = getMergeInfo(cellAddress, mergedCells);
+            if (mergeInfo.skip) {
+                continue;
+            }
+            
+            // セルスタイルを構築
+            const styles = buildCellStyleForCamera(cellStyle, colWidths[numberToColumn(col)]);
+            
+            // セルを生成
+            const colspan = mergeInfo.colspan > 1 ? `colspan="${mergeInfo.colspan}"` : '';
+            const rowspan = mergeInfo.rowspan > 1 ? `rowspan="${mergeInfo.rowspan}"` : '';
+            
+            // データバインディング用の属性を設定
+            const dataField = mapCellToDataField(cellAddress, cellValue);
+            const displayValue = dataField ? getDisplayValue(dataField) : escapeHtml(cellValue);
+            
+            // セルアドレスをdata属性として保存（動的フィールド用）
+            const cellDataAttr = `data-cell="${cellAddress}"`;
+            const idAttr = dataField ? `id="${dataField}"` : '';
+            
+            tableHTML += `<td ${colspan} ${rowspan} style="${styles}" ${idAttr} ${cellDataAttr}>${displayValue}</td>`;
+        }
+        
+        tableHTML += '</tr>';
+    }
+    
+    return tableHTML;
+}
+
+// セルをデータフィールドにマッピング
+function mapCellToDataField(cellAddress, cellValue) {
+    const value = cellValue.toLowerCase();
+    
+    // セルの内容に基づいてデータフィールドを判定
+    if (value.includes('\u8abf\u67fb\u756a\u53f7') || value.includes('survey')) return 'surveyNumber';
+    if (value.includes('\u5efa\u7269\u756a\u53f7') || value.includes('building')) return 'buildingNumber';
+    if (value.includes('\u6240\u6709\u8005') || value.includes('owner')) return 'owner';
+    if (value.includes('\u50b7\u306e\u7a2e\u985e') || value.includes('damage') && value.includes('type')) return 'damageType';
+    if (value.includes('\u5bf8\u6cd5') || value.includes('size')) return 'damageSize';
+    if (value.includes('\u640d\u50b7\u7bb8\u6240') || value.includes('location')) return 'damageLocation';
+    if (value.includes('\u5199\u771f\u756a\u53f7') || value.includes('photo')) return 'photoNumber';
+    if (value.includes('\u64ae\u5f71\u65e5') || value.includes('date')) return 'dateTaken';
+    
+    return null;
+}
+
+// 表示値を取得
+function getDisplayValue(dataField) {
+    const mapping = {
+        'surveyNumber': '-',
+        'buildingNumber': '-',
+        'owner': '-',
+        'damageType': '-',
+        'damageSize': '-',
+        'damageLocation': '-',
+        'photoNumber': '-',
+        'dateTaken': new Date().toLocaleDateString('ja-JP')
+    };
+    
+    return mapping[dataField] || '-';
+}
+
+// カメラ用のセルスタイルを構築
+function buildCellStyleForCamera(cellStyle, colWidth) {
+    let styles = [];
+    
+    // 基本スタイル
+    styles.push('padding: 4px 6px');
+    styles.push('text-align: left');
+    styles.push('font-size: 11px');
+    
+    // 幅設定
+    if (colWidth) {
+        styles.push(`width: ${colWidth * 8}px`);
+    }
+    
+    // 罫線設定（シンプル化）
+    styles.push('border: 1px solid #333');
+    
+    // 背景色設定
+    if (cellStyle.fill && cellStyle.fill.color && cellStyle.fill.color !== 'None') {
+        styles.push(`background-color: ${convertColor(cellStyle.fill.color)}`);
+    } else {
+        // デフォルト背景
+        styles.push('background: white');
+    }
+    
+    // フォント設定
+    if (cellStyle.font) {
+        const font = cellStyle.font;
+        if (font.bold) styles.push('font-weight: bold');
+        if (font.italic) styles.push('font-style: italic');
+    }
+    
+    return styles.join('; ');
+}
+
+// Excelから初期値を適用
+function applyInitialValuesFromExcel(cellData) {
+    // セルデータから入力フィールドに初期値を設定
+    // 例: A1セルに「調査番号」があり、B1に値がある場合
+    Object.entries(cellData).forEach(([cellAddress, value]) => {
+        // 値が入力フィールドに対応する場合は設定
+        if (value && !isNaN(value)) {
+            // 数値の場合は入力フィールドに設定する可能性
+            // 実装は要件に応じて調整
+        }
+    });
+}
+
+// 基本的なテンプレート設定を適用
+function applyBasicTemplateSettings(template) {
+    // 黒板サイズの調整
+    const blackboard = document.getElementById('blackboardOverlay');
+    if (template.default_width && template.default_height) {
+        blackboard.style.width = template.default_width + 'px';
+        blackboard.style.height = template.default_height + 'px';
+    }
+    
+    updateBlackboard();
+}
+
+// ヘルパー関数群（templates.htmlと共通）
+function numberToColumn(num) {
+    let result = '';
+    while (num > 0) {
+        num--;
+        result = String.fromCharCode(65 + (num % 26)) + result;
+        num = Math.floor(num / 26);
+    }
+    return result;
+}
+
+function getMergeInfo(cellAddress, mergedCells) {
+    let colspan = 1;
+    let rowspan = 1;
+    let skip = false;
+    
+    for (const merge of mergedCells) {
+        const startCell = merge.start;
+        const endCell = merge.end;
+        
+        if (cellAddress === startCell) {
+            const startCol = getColumnNumber(startCell);
+            const startRow = getRowNumber(startCell);
+            const endCol = getColumnNumber(endCell);
+            const endRow = getRowNumber(endCell);
+            
+            colspan = endCol - startCol + 1;
+            rowspan = endRow - startRow + 1;
+        } else if (isInMergeRange(cellAddress, merge)) {
+            skip = true;
+        }
+    }
+    
+    return { colspan, rowspan, skip };
+}
+
+function isInMergeRange(cellAddress, merge) {
+    const startCol = getColumnNumber(merge.start);
+    const startRow = getRowNumber(merge.start);
+    const endCol = getColumnNumber(merge.end);
+    const endRow = getRowNumber(merge.end);
+    
+    const cellCol = getColumnNumber(cellAddress);
+    const cellRow = getRowNumber(cellAddress);
+    
+    return cellCol >= startCol && cellCol <= endCol && 
+           cellRow >= startRow && cellRow <= endRow;
+}
+
+function getColumnNumber(cellAddress) {
+    const match = cellAddress.match(/^([A-Z]+)/);
+    if (!match) return 1;
+    
+    const letters = match[1];
+    let result = 0;
+    for (let i = 0; i < letters.length; i++) {
+        result = result * 26 + (letters.charCodeAt(i) - 64);
+    }
+    return result;
+}
+
+function getRowNumber(cellAddress) {
+    const match = cellAddress.match(/(\d+)$/);
+    return match ? parseInt(match[1]) : 1;
+}
+
+function convertColor(color) {
+    if (!color || color === 'None') return '#000000';
+    if (color.startsWith('#')) return color;
+    if (color.length === 8) {
+        return '#' + color.substring(2);
+    }
+    return '#' + color;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 黒板を初期状態に戻す
+function resetBlackboardToDefault() {
+    // 入力フィールドをクリア
+    document.getElementById('surveyNumberInput').value = '';
+    document.getElementById('buildingNumberInput').value = '';
+    document.getElementById('ownerInput').value = '';
+    document.getElementById('damageTypeInput').value = '';
+    document.getElementById('damageSizeInput').value = '';
+    document.getElementById('damageLocationInput').value = '';
+    
+    // 黒板サイズを初期値に戻す
+    const blackboard = document.getElementById('blackboardOverlay');
+    blackboard.style.width = '';
+    blackboard.style.height = '';
+    
+    updateBlackboard();
+}
+
+// 黒板のドラッグ機能
+function setupBlackboardDrag() {
+    let isDragging = false;
+    let dragOffset = { x: 0, y: 0 };
+    const blackboard = document.getElementById('blackboardOverlay');
+    
+    // マウスイベント
+    blackboard.addEventListener('mousedown', function(e) {
+        isDragging = true;
+        dragOffset.x = e.clientX - blackboard.offsetLeft;
+        dragOffset.y = e.clientY - blackboard.offsetTop;
+        e.preventDefault();
+    });
+    
+    document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        
+        blackboard.style.left = (e.clientX - dragOffset.x) + 'px';
+        blackboard.style.top = (e.clientY - dragOffset.y) + 'px';
+        blackboard.style.right = 'auto';
+    });
+    
+    document.addEventListener('mouseup', function() {
+        isDragging = false;
+    });
+    
+    // タッチイベント
+    blackboard.addEventListener('touchstart', function(e) {
+        const touch = e.touches[0];
+        isDragging = true;
+        dragOffset.x = touch.clientX - blackboard.offsetLeft;
+        dragOffset.y = touch.clientY - blackboard.offsetTop;
+        e.preventDefault();
+    });
+    
+    document.addEventListener('touchmove', function(e) {
+        if (!isDragging) return;
+        
+        const touch = e.touches[0];
+        blackboard.style.left = (touch.clientX - dragOffset.x) + 'px';
+        blackboard.style.top = (touch.clientY - dragOffset.y) + 'px';
+        blackboard.style.right = 'auto';
+        e.preventDefault();
+    });
+    
+    document.addEventListener('touchend', function() {
+        isDragging = false;
+    });
+}
+
+// ページを離れる時にカメラを停止
+window.addEventListener('beforeunload', function() {
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+    }
+});
+</script>
+{% endblock %}

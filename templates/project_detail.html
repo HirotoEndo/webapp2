@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.name }} - 工損調査システム{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">ホーム</a></li>
+                <li class="breadcrumb-item active">{{ project.name }}</li>
+            </ol>
+        </nav>
+        
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-folder-open"></i> {{ project.name }}
+            </h1>
+            <div class="btn-group">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newSubprojectModal">
+                    <i class="fas fa-plus"></i> 新規エリア
+                </button>
+                <button class="btn btn-success" onclick="exportProject()">
+                    <i class="fas fa-download"></i> エクスポート
+                </button>
+            </div>
+        </div>
+        
+        <!-- プロジェクト情報 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5>プロジェクト情報</h5>
+                        <p><strong>場所:</strong> {{ project.location or '未設定' }}</p>
+                        <p><strong>作成日:</strong> {{ project.created_at.strftime('%Y年%m月%d日') }}</p>
+                        <p><strong>更新日:</strong> {{ project.updated_at.strftime('%Y年%m月%d日') }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>説明</h5>
+                        <p>{{ project.description or '説明なし' }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- サブプロジェクト（エリア）一覧 -->
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-map-marker-alt"></i> エリア一覧</h5>
+            </div>
+            <div class="card-body">
+                <div class="row" id="subprojectList">
+                    <!-- サブプロジェクトカードがここに表示される -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- 全体写真一覧 -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5><i class="fas fa-images"></i> 全体写真一覧</h5>
+            </div>
+            <div class="card-body">
+                <div class="row" id="photoList">
+                    <!-- 写真サムネイルがここに表示される -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 新規サブプロジェクト作成モーダル -->
+<div class="modal fade" id="newSubprojectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新規エリア作成</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="newSubprojectForm">
+                    <div class="mb-3">
+                        <label for="subprojectName" class="form-label">エリア名</label>
+                        <input type="text" class="form-control" id="subprojectName" required>
+                        <div class="form-text">例: 外構、内部、車庫など</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="subprojectDescription" class="form-label">説明</label>
+                        <textarea class="form-control" id="subprojectDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="button" class="btn btn-primary" onclick="createSubproject()">作成</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const projectId = {{ project.id }};
+
+// サブプロジェクト一覧の読み込み
+function loadSubprojects() {
+    fetch(`/api/subprojects/project/${projectId}`)
+        .then(response => response.json())
+        .then(subprojects => {
+            const subprojectList = document.getElementById('subprojectList');
+            subprojectList.innerHTML = '';
+            
+            if (subprojects.length === 0) {
+                subprojectList.innerHTML = '<div class="col-12"><p class="text-muted">エリアがありません</p></div>';
+                return;
+            }
+            
+            subprojects.forEach(subproject => {
+                const subprojectCard = createSubprojectCard(subproject);
+                subprojectList.appendChild(subprojectCard);
+            });
+        })
+        .catch(error => {
+            console.error('サブプロジェクトの読み込みに失敗しました:', error);
+        });
+}
+
+// サブプロジェクトカードの作成
+function createSubprojectCard(subproject) {
+    const col = document.createElement('div');
+    col.className = 'col-md-6 col-lg-4 mb-3';
+    
+    col.innerHTML = `
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">${subproject.name}</h5>
+                <p class="card-text">${subproject.description || '説明なし'}</p>
+                <div class="d-flex justify-content-between align-items-center">
+                    <a href="/project/${projectId}/subproject/${subproject.id}" class="btn btn-primary">
+                        <i class="fas fa-eye"></i> 詳細
+                    </a>
+                    <small class="text-muted">
+                        ${new Date(subproject.created_at).toLocaleDateString()}
+                    </small>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    return col;
+}
+
+// 写真一覧の読み込み
+function loadPhotos() {
+    fetch(`/api/photos/project/${projectId}`)
+        .then(response => response.json())
+        .then(photos => {
+            const photoList = document.getElementById('photoList');
+            photoList.innerHTML = '';
+            
+            if (photos.length === 0) {
+                photoList.innerHTML = '<div class="col-12"><p class="text-muted">写真がありません</p></div>';
+                return;
+            }
+            
+            photos.forEach(photo => {
+                const photoCard = createPhotoCard(photo);
+                photoList.appendChild(photoCard);
+            });
+        })
+        .catch(error => {
+            console.error('写真の読み込みに失敗しました:', error);
+        });
+}
+
+// 写真カードの作成
+function createPhotoCard(photo) {
+    const col = document.createElement('div');
+    col.className = 'col-md-3 col-sm-6 mb-3';
+    
+    col.innerHTML = `
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-image fa-3x text-muted mb-3"></i>
+                <h6 class="card-title">${photo.original_filename || photo.filename}</h6>
+                <p class="card-text">
+                    <small class="text-muted">
+                        ${new Date(photo.captured_at).toLocaleDateString()}
+                    </small>
+                </p>
+            </div>
+        </div>
+    `;
+    
+    return col;
+}
+
+// 新規サブプロジェクト作成
+function createSubproject() {
+    const name = document.getElementById('subprojectName').value;
+    const description = document.getElementById('subprojectDescription').value;
+    
+    if (!name) {
+        alert('エリア名を入力してください');
+        return;
+    }
+    
+    fetch('/api/subprojects/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            name: name,
+            description: description,
+            project_id: projectId
+        })
+    })
+    .then(response => response.json())
+    .then(subproject => {
+        // モーダルを閉じる
+        const modal = bootstrap.Modal.getInstance(document.getElementById('newSubprojectModal'));
+        modal.hide();
+        
+        // フォームをリセット
+        document.getElementById('newSubprojectForm').reset();
+        
+        // サブプロジェクト一覧を再読み込み
+        loadSubprojects();
+    })
+    .catch(error => {
+        console.error('サブプロジェクトの作成に失敗しました:', error);
+        alert('サブプロジェクトの作成に失敗しました');
+    });
+}
+
+// プロジェクトのエクスポート
+function exportProject() {
+    window.open(`/api/export/project/${projectId}`, '_blank');
+}
+
+// ページ読み込み時の処理
+document.addEventListener('DOMContentLoaded', function() {
+    loadSubprojects();
+    loadPhotos();
+});
+</script>
+{% endblock %}
