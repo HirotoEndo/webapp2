@@ -819,6 +819,7 @@ function setupBlackboardDrag() {
     let startX, startY, startLeft, startTop;
     let touchStartTime = 0;
     
+    
     blackboard.addEventListener('mousedown', (e) => {
         isDragging = true;
         startX = e.clientX;
@@ -834,9 +835,11 @@ function setupBlackboardDrag() {
         
         const x = e.clientX - startX;
         const y = e.clientY - startY;
+        const newLeft = startLeft + x;
+        const newTop = startTop + y;
         
-        blackboard.style.left = (startLeft + x) + 'px';
-        blackboard.style.top = (startTop + y) + 'px';
+        blackboard.style.left = newLeft + 'px';
+        blackboard.style.top = newTop + 'px';
     });
     
     document.addEventListener('mouseup', () => {
@@ -1153,142 +1156,122 @@ function generateBlackboardFromTemplate(template) {
     console.log('🔧 TEMPLATE: 受信したテンプレートオブジェクト全体:', template);
     
     try {
-        console.log('🔧 TEMPLATE: JSONパース前のcell_data:', template.cell_data);
-        console.log('🔧 TEMPLATE: JSONパース前のlayout_config:', template.layout_config);
-        console.log('🔧 TEMPLATE: JSONパース前のcell_styles:', template.cell_styles);
-        
-        const cellData = JSON.parse(template.cell_data || '{}');
         const layoutConfig = JSON.parse(template.layout_config || '{}');
         const cellTypes = layoutConfig.cell_types || {};
         const cellSizes = layoutConfig.cell_sizes || {};
         const cellStyles = template.cell_styles ? JSON.parse(template.cell_styles) : {};
-        
-        console.log('🔧 TEMPLATE: パース後のcellData:', cellData);
-        console.log('🔧 TEMPLATE: パース後のlayoutConfig:', layoutConfig);
-        console.log('🔧 TEMPLATE: cellTypes:', cellTypes);
-        console.log('🔧 TEMPLATE: cellSizes:', cellSizes);
-        console.log('🔧 TEMPLATE: cellStyles:', cellStyles);
+        const mergedCells = template.merged_cells ? JSON.parse(template.merged_cells) : [];
         
         // 黒板テーブルを取得
         const blackboard = document.getElementById('blackboardOverlay');
         const blackboardTable = blackboard.querySelector('.blackboard-table');
         
-        console.log('🔧 TEMPLATE: 黒板要素取得:', {
-            blackboard: !!blackboard,
-            blackboardTable: !!blackboardTable
+        // テンプレートのデフォルトサイズを黒板オーバーレイに適用
+        if (template.default_width && template.default_height) {
+            blackboard.style.width = template.default_width + 'px';
+            blackboard.style.height = template.default_height + 'px';
+            blackboardTable.style.width = template.default_width + 'px';
+            blackboardTable.style.height = template.default_height + 'px';
+            console.log('🔧 TEMPLATE: 黒板サイズ設定:', {
+                width: template.default_width + 'px',
+                height: template.default_height + 'px'
+            });
+        }
+        
+        // CSS Grid構造を生成（Excel風レイアウト）
+        blackboardTable.innerHTML = '';
+        
+        const maxRow = layoutConfig.max_row || 8;
+        const maxCol = layoutConfig.max_col || 6;
+        
+        // Grid templateを動的に設定
+        const gridTemplateColumns = [];
+        for (let col = 0; col < maxCol; col++) {
+            // 各列の幅を計算（最初の行のセルサイズを基準）
+            const cellId = `0-${col}`;
+            const width = (cellSizes[cellId] && cellSizes[cellId].width) ? cellSizes[cellId].width + 'px' : '80px';
+            gridTemplateColumns.push(width);
+        }
+        
+        const gridTemplateRows = [];
+        for (let row = 0; row < maxRow; row++) {
+            // 各行の高さを計算（最初の列のセルサイズを基準）
+            const cellId = `${row}-0`;
+            const height = (cellSizes[cellId] && cellSizes[cellId].height) ? cellSizes[cellId].height + 'px' : '30px';
+            gridTemplateRows.push(height);
+        }
+        
+        blackboardTable.style.gridTemplateColumns = gridTemplateColumns.join(' ');
+        blackboardTable.style.gridTemplateRows = gridTemplateRows.join(' ');
+        
+        console.log('🔧 GRID_DEBUG: Grid template設定:', {
+            columns: gridTemplateColumns,
+            rows: gridTemplateRows
         });
         
-        // 新しいテーブル構造を生成
-        blackboardTable.innerHTML = '';
-        console.log('🔧 TEMPLATE: 既存テーブル内容をクリア完了');
-        
-        // セルデータをグリッド形式で整理
-        const gridData = organizeGridData(cellData, layoutConfig);
-        console.log('🔧 TEMPLATE: グリッドデータ整理完了:', gridData);
-        
-        // テーブル行を生成
-        gridData.forEach((rowData, rowIndex) => {
-            const tr = document.createElement('tr');
-            
-            rowData.forEach((cellInfo, colIndex) => {
-                const cellId = `${rowIndex}-${colIndex}`;
+        // セルを生成
+        for (let row = 0; row < maxRow; row++) {
+            for (let col = 0; col < maxCol; col++) {
+                const cellId = `${row}-${col}`;
                 const cellType = cellTypes[cellId] || 'fixed';
                 
-                // セルにテキストがあるか、可変セルの場合は表示
-                if (cellInfo.text || cellType === 'variable') {
-                    const cellElement = document.createElement(cellType === 'fixed' ? 'th' : 'td');
-                    
-                    // 可変セルの場合はデフォルトテキストを表示
-                    if (cellType === 'variable') {
-                        cellElement.textContent = cellInfo.text || '-';
-                        cellElement.style.backgroundColor = '#f0f8ff';
-                        cellElement.style.border = '2px dashed #007bff';
-                        cellElement.style.minWidth = '80px';
-                        cellElement.style.textAlign = 'center';
-                        cellElement.style.fontWeight = 'bold';
-                        console.log(`🔧 TEMPLATE: 可変セル作成 [${cellId}] ${cellInfo.address}: "${cellInfo.text || '-'}"`);
-                    } else {
-                        cellElement.textContent = cellInfo.text;
-                        console.log(`🔧 TEMPLATE: 固定セル作成 [${cellId}] ${cellInfo.address}: "${cellInfo.text}"`);
+                const cell = document.createElement('div');
+                cell.className = cellType === 'fixed' ? 'blackboard-cell header' : 'blackboard-cell';
+                cell.dataset.row = row;
+                cell.dataset.col = col;
+                cell.dataset.cellId = cellId;
+                
+                // Grid位置を設定
+                cell.style.gridColumn = col + 1;
+                cell.style.gridRow = row + 1;
+                
+                // セルの内容を設定
+                if (template.cellData && template.cellData[cellId]) {
+                    const data = template.cellData[cellId];
+                    cell.textContent = data.text || '';
+                    if (data.style) {
+                        Object.assign(cell.style, data.style);
                     }
-                    
-                    // セルサイズを適用
-                    if (cellSizes[cellId]) {
-                        const cellSize = cellSizes[cellId];
-                        if (cellSize.width) {
-                            cellElement.style.width = cellSize.width + 'px';
-                            cellElement.style.minWidth = cellSize.width + 'px';
-                            console.log(`🔧 TEMPLATE: セル幅を設定 [${cellId}]: ${cellSize.width}px`);
-                        }
-                        if (cellSize.height) {
-                            cellElement.style.height = cellSize.height + 'px';
-                            cellElement.style.minHeight = cellSize.height + 'px';
-                            console.log(`🔧 TEMPLATE: セル高さを設定 [${cellId}]: ${cellSize.height}px`);
-                        }
+                    if (data.className) {
+                        cell.className += ' ' + data.className;
                     }
-                    
-                    // セルスタイルを適用（内部ID形式とExcelアドレス形式の両方をチェック）
-                    const styleToApply = cellStyles[cellId] || cellStyles[cellInfo.address];
-                    if (styleToApply) {
-                        console.log(`🔧 TEMPLATE: セルスタイル適用開始 [${cellId}/${cellInfo.address}]:`, styleToApply);
-                        
-                        // CSSスタイルを直接適用
-                        if (styleToApply.style) {
-                            const styleDeclarations = styleToApply.style.split(';').filter(s => s.trim());
-                            styleDeclarations.forEach(declaration => {
-                                const [property, value] = declaration.split(':').map(s => s.trim());
-                                if (property && value) {
-                                    cellElement.style.setProperty(property, value);
-                                    console.log(`🔧 TEMPLATE: CSSプロパティ適用 [${cellId}]: ${property} = ${value}`);
-                                }
-                            });
-                        }
-                        
-                        // CSSクラスを適用
-                        if (styleToApply.className) {
-                            const classes = styleToApply.className.split(' ').filter(c => c.trim() && c !== 'grid-cell');
-                            classes.forEach(className => {
-                                cellElement.classList.add(className);
-                                console.log(`🔧 TEMPLATE: CSSクラス適用 [${cellId}]: ${className}`);
-                            });
-                        }
-                        
-                        // Excel形式のalignmentをCSSに変換
-                        if (styleToApply.alignment && styleToApply.alignment.horizontal) {
-                            cellElement.style.textAlign = styleToApply.alignment.horizontal;
-                            console.log(`🔧 TEMPLATE: text-align適用 [${cellId}]: ${styleToApply.alignment.horizontal}`);
-                        }
-                        
-                        // Excel形式のfontをCSSに変換
-                        if (styleToApply.font) {
-                            if (styleToApply.font.bold) {
-                                cellElement.style.fontWeight = 'bold';
-                                console.log(`🔧 TEMPLATE: fontWeight適用 [${cellId}]: bold`);
-                            }
-                            if (styleToApply.font.italic) {
-                                cellElement.style.fontStyle = 'italic';
-                                console.log(`🔧 TEMPLATE: fontStyle適用 [${cellId}]: italic`);
-                            }
-                        }
-                        
-                        // Excel形式のfillをCSSに変換
-                        if (styleToApply.fill && styleToApply.fill.color) {
-                            cellElement.style.backgroundColor = styleToApply.fill.color;
-                            console.log(`🔧 TEMPLATE: backgroundColor適用 [${cellId}]: ${styleToApply.fill.color}`);
-                        }
-                    }
-                    
-                    cellElement.dataset.cellId = cellId;
-                    cellElement.dataset.cellAddress = cellInfo.address;
-                    
-                    tr.appendChild(cellElement);
                 }
-            });
-            
-            if (tr.children.length > 0) {
-                blackboardTable.appendChild(tr);
+                
+                // Excel形式のcell_dataから内容を取得
+                const cellData = JSON.parse(template.cell_data || '{}');
+                const excelAddress = convertToExcelAddress(row, col);
+                if (cellData[excelAddress]) {
+                    cell.textContent = cellData[excelAddress];
+                }
+                
+                // セルスタイルを適用
+                if (cellStyles[cellId]) {
+                    const styleData = cellStyles[cellId];
+                    if (styleData.style) {
+                        cell.style.cssText += '; ' + styleData.style;
+                    }
+                    if (styleData.className) {
+                        cell.className = styleData.className;
+                    }
+                }
+                
+                // 可変セルの場合はデフォルトテキスト
+                if (cellType === 'variable') {
+                    if (!cell.textContent) cell.textContent = '-';
+                }
+                
+                // セルに内容があるか、可変セルの場合のみ表示
+                if (cell.textContent || cellType === 'variable') {
+                    blackboardTable.appendChild(cell);
+                }
             }
-        });
+        }
+        
+        // 結合セルを処理
+        if (mergedCells && mergedCells.length > 0) {
+            console.log('🔧 TEMPLATE: 結合セル処理開始:', mergedCells);
+            applyMergedCells(blackboardTable, mergedCells, cellSizes);
+        }
         
         console.debug('テンプレートから黒板レイアウトを生成しました');
         
@@ -1492,6 +1475,97 @@ function generateFieldsFromTemplate(cellData, cellTypes, cellConfigs) {
 function convertToExcelAddress(row, col) {
     const colLetter = String.fromCharCode(65 + col);
     return `${colLetter}${row + 1}`;
+}
+
+// 結合セルを適用（CSS Grid版）
+function applyMergedCells(table, mergedCells, cellSizes) {
+    console.log('🔧 MERGED_CELLS: 結合セル適用開始 (CSS Grid版)');
+    
+    mergedCells.forEach(mergeInfo => {
+        console.log('🔧 MERGED_CELLS: 結合情報:', mergeInfo);
+        
+        // 結合情報の形式をチェック
+        let startRow, startCol, endRow, endCol;
+        
+        if (Array.isArray(mergeInfo) && mergeInfo.length === 2) {
+            // [startCellId, endCellId] 形式
+            const [startCellId, endCellId] = mergeInfo;
+            [startRow, startCol] = startCellId.split('-').map(Number);
+            [endRow, endCol] = endCellId.split('-').map(Number);
+        } else if (mergeInfo.range) {
+            // {range: "A1:B2"} 形式
+            const range = mergeInfo.range;
+            const [startAddr, endAddr] = range.split(':');
+            const startCoords = excelAddressToCoords(startAddr);
+            const endCoords = excelAddressToCoords(endAddr);
+            startRow = startCoords.row;
+            startCol = startCoords.col;
+            endRow = endCoords.row;
+            endCol = endCoords.col;
+        } else {
+            console.warn('🔧 MERGED_CELLS: 不明な結合情報形式:', mergeInfo);
+            return;
+        }
+        
+        console.log(`🔧 MERGED_CELLS: 結合セル範囲 [${startRow}-${startCol}] to [${endRow}-${endCol}]`);
+        
+        // 結合元セルを取得
+        const startCell = table.querySelector(`[data-cell-id="${startRow}-${startCol}"]`);
+        if (!startCell) {
+            console.warn(`🔧 MERGED_CELLS: 開始セルが見つかりません: ${startRow}-${startCol}`);
+            return;
+        }
+        
+        // 結合範囲を計算
+        const rowSpan = endRow - startRow + 1;
+        const colSpan = endCol - startCol + 1;
+        
+        // CSS Gridで結合セルを設定
+        startCell.style.gridColumn = `${startCol + 1} / ${endCol + 2}`;
+        startCell.style.gridRow = `${startRow + 1} / ${endRow + 2}`;
+        
+        console.log(`🔧 MERGED_CELLS: Grid結合設定:`, {
+            gridColumn: `${startCol + 1} / ${endCol + 2}`,
+            gridRow: `${startRow + 1} / ${endRow + 2}`
+        });
+        
+        // 結合される他のセルを削除
+        for (let r = startRow; r <= endRow; r++) {
+            for (let c = startCol; c <= endCol; c++) {
+                if (r === startRow && c === startCol) continue; // 元セルはスキップ
+                
+                const cellToRemove = table.querySelector(`[data-cell-id="${r}-${c}"]`);
+                if (cellToRemove) {
+                    cellToRemove.remove();
+                    console.log(`🔧 MERGED_CELLS: セル削除 [${r}-${c}]`);
+                }
+            }
+        }
+        
+        console.log(`🔧 MERGED_CELLS: 結合セル適用完了 [${startRow}-${startCol}]`);
+    });
+    
+    console.log('🔧 MERGED_CELLS: 全結合セル適用完了');
+}
+
+// Excelアドレスを座標に変換
+function excelAddressToCoords(address) {
+    const match = address.match(/^([A-Z]+)(\d+)$/);
+    if (!match) return null;
+    
+    const colStr = match[1];
+    const rowStr = match[2];
+    
+    // 列文字を数値に変換（A=0, B=1, ...）
+    let col = 0;
+    for (let i = 0; i < colStr.length; i++) {
+        col = col * 26 + (colStr.charCodeAt(i) - 65 + 1);
+    }
+    col -= 1; // 0ベースに調整
+    
+    const row = parseInt(rowStr) - 1; // 0ベースに調整
+    
+    return { row, col };
 }
 
 // 位置からフィールド名を推測

@@ -9,6 +9,7 @@ class BlackboardTemplateEditor {
         this.cellTypes = {}; // セルタイプデータ（fixed/variable）
         this.cellConfigs = {}; // セル設定データ（ドロップダウン選択肢など）
         this.cellSizes = {}; // セルサイズデータ（幅・高さ）
+        this.cellStyles = {}; // セルスタイルデータ（CSS、クラス名）
         this.mergedCells = new Map();
         this.history = [];
         this.historyIndex = -1;
@@ -96,6 +97,17 @@ class BlackboardTemplateEditor {
             }
             if (data.className) {
                 cell.className += ' ' + data.className;
+            }
+        }
+        
+        // セルスタイルを適用
+        if (this.cellStyles[cellId]) {
+            const styleData = this.cellStyles[cellId];
+            if (styleData.style) {
+                cell.style.cssText = styleData.style;
+            }
+            if (styleData.className) {
+                cell.className = styleData.className;
             }
         }
         
@@ -728,6 +740,24 @@ function loadExistingTemplate(templateId) {
                 }
             }
             
+            // セルスタイルを読み込み
+            if (template.cell_styles) {
+                try {
+                    const cellStyles = JSON.parse(template.cell_styles);
+                    // Excel形式のセルアドレス（A1, B2など）を内部形式（0-0, 1-1など）に変換
+                    editor.cellStyles = {};
+                    for (const [excelAddress, styleData] of Object.entries(cellStyles)) {
+                        const cellCoords = excelAddressToCellId(excelAddress);
+                        if (cellCoords) {
+                            editor.cellStyles[cellCoords] = styleData;
+                        }
+                    }
+                    console.log('セルスタイルデータを読み込み:', editor.cellStyles);
+                } catch (e) {
+                    console.warn('セルスタイルの解析に失敗:', e);
+                }
+            }
+            
             // 編集用のテンプレートIDを保存
             editor.editingTemplateId = templateId;
             
@@ -893,45 +923,142 @@ function setBorderStyle(style) {
 
 // セルを結合
 function mergeCells() {
+    console.log('🔧 MERGE_DEBUG: セル結合ボタンが押されました');
+    console.log('🔧 MERGE_DEBUG: 現在選択されているセル:', Array.from(editor.selectedCells));
+    console.log('🔧 MERGE_DEBUG: 選択セル数:', editor.selectedCells.size);
+    
     if (editor.selectedCells.size < 2) {
+        console.log('🔧 MERGE_DEBUG: 選択セルが不足しています（最低2個必要）');
         alert('2つ以上のセルを選択してください');
         return;
     }
     
-    // 結合処理の実装（簡略化）
+    // 結合処理の実装
     const cells = Array.from(editor.selectedCells);
-    const [firstRow, firstCol] = cells[0].split('-').map(Number);
+    console.log('🔧 MERGE_DEBUG: 結合対象セル:', cells);
     
-    // 最初のセル以外を非表示にする
-    cells.slice(1).forEach(cellId => {
-        const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
-        if (cell) {
-            cell.style.display = 'none';
-        }
+    const positions = cells.map(cellId => {
+        const [row, col] = cellId.split('-').map(Number);
+        return { row, col, cellId };
+    });
+    console.log('🔧 MERGE_DEBUG: セル位置情報:', positions);
+    
+    // 結合範囲を計算
+    const minRow = Math.min(...positions.map(p => p.row));
+    const maxRow = Math.max(...positions.map(p => p.row));
+    const minCol = Math.min(...positions.map(p => p.col));
+    const maxCol = Math.max(...positions.map(p => p.col));
+    
+    const rowSpan = maxRow - minRow + 1;
+    const colSpan = maxCol - minCol + 1;
+    
+    console.log('🔧 MERGE_DEBUG: 結合範囲:', {
+        minRow, maxRow, minCol, maxCol,
+        rowSpan, colSpan
     });
     
-    // 最初のセルのサイズを調整
-    const firstCell = document.querySelector(`[data-cell-id="${cells[0]}"]`);
-    if (firstCell) {
-        firstCell.style.width = `${80 * Math.sqrt(editor.selectedCells.size)}px`;
+    // 結合情報を保存
+    const mergeKey = `${minRow}-${minCol}_${maxRow}-${maxCol}`;
+    editor.mergedCells.set(mergeKey, {
+        startCell: `${minRow}-${minCol}`,
+        endCell: `${maxRow}-${maxCol}`,
+        rowSpan,
+        colSpan
+    });
+    console.log('🔧 MERGE_DEBUG: 結合情報保存:', mergeKey, editor.mergedCells.get(mergeKey));
+    
+    // 結合範囲のメインセル（左上）を取得
+    const mainCell = document.querySelector(`[data-cell-id="${minRow}-${minCol}"]`);
+    
+    if (mainCell) {
+        // HTMLテーブルのcolspanとrowspanを設定
+        mainCell.setAttribute('colspan', colSpan);
+        mainCell.setAttribute('rowspan', rowSpan);
+        
+        console.log('🔧 MERGE_DEBUG: メインセル設定:', {
+            cellId: `${minRow}-${minCol}`,
+            colspan: colSpan,
+            rowspan: rowSpan
+        });
+        
+        // 結合に含まれる他のセルを非表示にする
+        cells.forEach(cellId => {
+            if (cellId !== `${minRow}-${minCol}`) {
+                const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
+                if (cell) {
+                    cell.style.display = 'none';
+                    console.log('🔧 MERGE_DEBUG: セル非表示:', cellId);
+                }
+            }
+        });
     }
     
+    console.log('🔧 MERGE_DEBUG: 全結合情報:', Array.from(editor.mergedCells.entries()));
+    
     editor.saveState();
+    console.log('🔧 MERGE_DEBUG: セル結合処理完了');
 }
 
 // セルの結合を解除
 function splitCells() {
-    if (!editor.selectedCells.size) return;
+    console.log('🔧 SPLIT_DEBUG: セル結合解除ボタンが押されました');
+    console.log('🔧 SPLIT_DEBUG: 現在選択されているセル:', Array.from(editor.selectedCells));
     
-    editor.selectedCells.forEach(cellId => {
-        const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
-        if (cell) {
-            cell.style.display = '';
-            cell.style.width = '';
+    if (!editor.selectedCells.size) {
+        console.log('🔧 SPLIT_DEBUG: 選択セルがありません');
+        return;
+    }
+    
+    // 選択されたセルに関連する結合情報を探す
+    const selectedCells = Array.from(editor.selectedCells);
+    const mergeKeysToRemove = [];
+    
+    editor.mergedCells.forEach((mergeInfo, mergeKey) => {
+        const [startRow, startCol] = mergeInfo.startCell.split('-').map(Number);
+        const [endRow, endCol] = mergeInfo.endCell.split('-').map(Number);
+        
+        // 選択されたセルが結合範囲内にあるかチェック
+        const isInMergeRange = selectedCells.some(cellId => {
+            const [row, col] = cellId.split('-').map(Number);
+            return row >= startRow && row <= endRow && col >= startCol && col <= endCol;
+        });
+        
+        if (isInMergeRange) {
+            console.log('🔧 SPLIT_DEBUG: 結合解除対象:', mergeKey, mergeInfo);
+            mergeKeysToRemove.push(mergeKey);
+            
+            // メインセルのcolspan/rowspanを削除
+            const mainCell = document.querySelector(`[data-cell-id="${mergeInfo.startCell}"]`);
+            if (mainCell) {
+                mainCell.removeAttribute('colspan');
+                mainCell.removeAttribute('rowspan');
+                console.log('🔧 SPLIT_DEBUG: メインセル属性削除:', mergeInfo.startCell);
+            }
+            
+            // 結合範囲内の全セルを表示
+            for (let row = startRow; row <= endRow; row++) {
+                for (let col = startCol; col <= endCol; col++) {
+                    const cellId = `${row}-${col}`;
+                    const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
+                    if (cell) {
+                        cell.style.display = '';
+                        console.log('🔧 SPLIT_DEBUG: セル表示復元:', cellId);
+                    }
+                }
+            }
         }
     });
     
+    // 結合情報を削除
+    mergeKeysToRemove.forEach(key => {
+        editor.mergedCells.delete(key);
+        console.log('🔧 SPLIT_DEBUG: 結合情報削除:', key);
+    });
+    
+    console.log('🔧 SPLIT_DEBUG: 残存結合情報:', Array.from(editor.mergedCells.entries()));
+    
     editor.saveState();
+    console.log('🔧 SPLIT_DEBUG: セル結合解除処理完了');
 }
 
 // 行を挿入

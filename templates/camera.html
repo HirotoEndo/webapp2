@@ -77,23 +77,38 @@
         border: none;
         min-width: auto;
         max-width: none;
+        width: auto;
         z-index: 10;
         cursor: move;
         box-shadow: none;
     }
     
     .blackboard-table {
-        width: 100%;
-        border-collapse: collapse;
+        display: grid;
+        gap: 0;
         font-size: 11px;
+        width: auto;
+        border: 1px solid #333;
     }
     
-    .blackboard-table th,
-    .blackboard-table td {
+    .blackboard-cell {
         border: 1px solid #333;
         padding: 4px 6px;
         text-align: left;
         background: rgba(255, 255, 255, 0.95);
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+        border-top: none;
+        border-left: none;
+    }
+    
+    .blackboard-cell.header {
+        background: rgba(240, 240, 240, 0.95);
+        font-weight: bold;
+        font-size: 10px;
     }
     
     .blackboard-table th {
