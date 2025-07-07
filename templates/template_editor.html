@@ -65,6 +65,14 @@
     .toolbar-btn.active {
         background: #007bff;
         color: white;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    .btn.active {
+        background: #007bff !important;
+        color: white !important;
+        border-color: #007bff !important;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
     }
     
     .grid-container {
@@ -99,31 +107,48 @@
         position: absolute;
         background: #2196f3;
         z-index: 1000;
+        border: 1px solid #0d47a1;
+        transition: all 0.2s ease;
+    }
+    
+    .resize-handle:hover {
+        background: #1976d2;
+        transform: scale(1.1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }
     
     .resize-handle-right {
-        right: -3px;
+        right: -4px;
         top: 0;
-        width: 6px;
+        width: 8px;
         height: 100%;
         cursor: col-resize;
+        border-radius: 0 2px 2px 0;
     }
     
     .resize-handle-bottom {
-        bottom: -3px;
+        bottom: -4px;
         left: 0;
         width: 100%;
-        height: 6px;
+        height: 8px;
         cursor: row-resize;
+        border-radius: 0 0 2px 2px;
     }
     
     .resize-handle-corner {
-        right: -3px;
-        bottom: -3px;
-        width: 6px;
-        height: 6px;
+        right: -4px;
+        bottom: -4px;
+        width: 8px;
+        height: 8px;
         cursor: nw-resize;
         background: #1976d2;
+        border-radius: 0 0 2px 0;
+        border: 1px solid #0d47a1;
+    }
+    
+    .resize-handle-corner:hover {
+        background: #0d47a1;
+        transform: scale(1.2);
     }
     
     /* リサイズ中のスタイル */
@@ -140,8 +165,32 @@
         z-index: 999;
     }
     
+    .cell-resizing {
+        outline: 2px solid #2196f3;
+        outline-offset: 2px;
+        box-shadow: 0 0 10px rgba(33, 150, 243, 0.3);
+    }
+    
+    .resize-info {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        z-index: 9999;
+        pointer-events: none;
+    }
+    
     .grid-cell:hover {
         background: #e3f2fd;
+    }
+    
+    .grid-cell.selected:hover .resize-handle {
+        opacity: 1;
+        visibility: visible;
     }
     
     .grid-cell.multi-selected {
@@ -233,6 +282,86 @@
         cursor: pointer;
         padding: 0;
     }
+    
+    /* 通知システム */
+    .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        min-width: 300px;
+        max-width: 500px;
+        z-index: 10000;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+        font-family: Arial, sans-serif;
+    }
+    
+    .notification.show {
+        transform: translateX(0);
+    }
+    
+    .notification.success {
+        background: #d4edda;
+        border-left: 4px solid #28a745;
+        color: #155724;
+    }
+    
+    .notification.error {
+        background: #f8d7da;
+        border-left: 4px solid #dc3545;
+        color: #721c24;
+    }
+    
+    .notification.warning {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        color: #856404;
+    }
+    
+    .notification.loading {
+        background: #d1ecf1;
+        border-left: 4px solid #17a2b8;
+        color: #0c5460;
+    }
+    
+    .notification-content {
+        display: flex;
+        align-items: center;
+        padding: 15px;
+        gap: 10px;
+    }
+    
+    .notification-close {
+        background: none;
+        border: none;
+        margin-left: auto;
+        cursor: pointer;
+        padding: 5px;
+        border-radius: 50%;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+    }
+    
+    .notification-close:hover {
+        opacity: 1;
+        background: rgba(0,0,0,0.1);
+    }
+    
+    .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid transparent;
+        border-top: 2px solid currentColor;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
 </style>
 {% endblock %}
 
@@ -240,11 +369,14 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1><i class="fas fa-edit"></i> 黒板テンプレートエディタ</h1>
     <div>
-        <button class="btn btn-success" onclick="saveTemplate()">
+        <button class="btn btn-success" onclick="saveTemplate()" id="saveButton">
             <i class="fas fa-save"></i> 保存
         </button>
         <button class="btn btn-primary" onclick="previewTemplate()">
             <i class="fas fa-eye"></i> プレビュー
+        </button>
+        <button class="btn btn-info" onclick="showKeyboardShortcuts()">
+            <i class="fas fa-keyboard"></i> ショートカット
         </button>
         <a href="/templates" class="btn btn-secondary">
             <i class="fas fa-arrow-left"></i> 戻る
@@ -468,6 +600,116 @@
             </div>
             <div class="modal-body">
                 <div id="previewContent"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- キーボードショートカットモーダル -->
+<div class="modal fade" id="shortcutsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-keyboard"></i> キーボードショートカット</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-edit"></i> 編集操作</h6>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td><kbd>Ctrl</kbd> + <kbd>S</kbd></td>
+                                    <td>保存</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Ctrl</kbd> + <kbd>Z</kbd></td>
+                                    <td>元に戻す</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Ctrl</kbd> + <kbd>Y</kbd></td>
+                                    <td>やり直し</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td>
+                                    <td>セル内容削除</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>F2</kbd> / <kbd>Enter</kbd></td>
+                                    <td>セル編集</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Escape</kbd></td>
+                                    <td>選択解除</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        
+                        <h6><i class="fas fa-copy"></i> コピー・ペースト</h6>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td><kbd>Ctrl</kbd> + <kbd>C</kbd></td>
+                                    <td>コピー</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Ctrl</kbd> + <kbd>X</kbd></td>
+                                    <td>カット</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Ctrl</kbd> + <kbd>V</kbd></td>
+                                    <td>ペースト</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-mouse-pointer"></i> 選択・ナビゲーション</h6>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td><kbd>Ctrl</kbd> + <kbd>A</kbd></td>
+                                    <td>全選択</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></td>
+                                    <td>セル移動</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Shift</kbd> + <kbd>矢印キー</kbd></td>
+                                    <td>範囲選択</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Tab</kbd></td>
+                                    <td>次のセルへ</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Shift</kbd> + <kbd>Tab</kbd></td>
+                                    <td>前のセルへ</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        
+                        <h6><i class="fas fa-font"></i> フォーマット</h6>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td><kbd>Ctrl</kbd> + <kbd>B</kbd></td>
+                                    <td>太字</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Ctrl</kbd> + <kbd>I</kbd></td>
+                                    <td>斜体</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>

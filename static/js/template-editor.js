@@ -16,6 +16,7 @@ class BlackboardTemplateEditor {
         this.isSelecting = false;
         this.isResizing = false; // リサイズ中フラグ
         this.resizeData = null; // リサイズデータ
+        this.clipboardData = null; // クリップボードデータ
         
         this.init();
     }
@@ -31,12 +32,22 @@ class BlackboardTemplateEditor {
         const grid = document.getElementById('blackboardGrid');
         grid.innerHTML = '';
         
+        // アクセシビリティ属性を追加
+        grid.setAttribute('role', 'grid');
+        grid.setAttribute('aria-label', '黒板テンプレートグリッド');
+        grid.setAttribute('aria-rowcount', this.rows + 1);
+        grid.setAttribute('aria-colcount', this.cols + 1);
+        
         // ヘッダー行を作成
         const headerRow = document.createElement('tr');
+        headerRow.setAttribute('role', 'row');
+        headerRow.setAttribute('aria-rowindex', '1');
         
         // 左上角のセル
         const cornerCell = document.createElement('td');
         cornerCell.className = 'corner-cell';
+        cornerCell.setAttribute('role', 'columnheader');
+        cornerCell.setAttribute('aria-label', 'グリッド左上角');
         headerRow.appendChild(cornerCell);
         
         // 列ヘッダーを作成
@@ -44,7 +55,19 @@ class BlackboardTemplateEditor {
             const colHeader = document.createElement('td');
             colHeader.className = 'col-header';
             colHeader.textContent = this.numberToColumn(col + 1);
+            colHeader.setAttribute('role', 'columnheader');
+            colHeader.setAttribute('aria-label', `列 ${this.numberToColumn(col + 1)}`);
+            colHeader.setAttribute('tabindex', '0');
             colHeader.onclick = () => this.selectColumn(col);
+            
+            // キーボードアクセス
+            colHeader.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    this.selectColumn(col);
+                }
+            });
+            
             headerRow.appendChild(colHeader);
         }
         grid.appendChild(headerRow);
@@ -52,12 +75,26 @@ class BlackboardTemplateEditor {
         // データ行を作成
         for (let row = 0; row < this.rows; row++) {
             const tr = document.createElement('tr');
+            tr.setAttribute('role', 'row');
+            tr.setAttribute('aria-rowindex', row + 2);
             
             // 行ヘッダー
             const rowHeader = document.createElement('td');
             rowHeader.className = 'row-header';
             rowHeader.textContent = row + 1;
+            rowHeader.setAttribute('role', 'rowheader');
+            rowHeader.setAttribute('aria-label', `行 ${row + 1}`);
+            rowHeader.setAttribute('tabindex', '0');
             rowHeader.onclick = () => this.selectRow(row);
+            
+            // キーボードアクセス
+            rowHeader.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    this.selectRow(row);
+                }
+            });
+            
             tr.appendChild(rowHeader);
             
             // データセル
@@ -70,6 +107,9 @@ class BlackboardTemplateEditor {
         }
         
         this.updateSelectionInfo();
+        
+        // 結合セルを復元
+        this.restoreMergedCells();
     }
     
     // セルを作成
@@ -80,6 +120,11 @@ class BlackboardTemplateEditor {
         cell.dataset.row = row;
         cell.dataset.col = col;
         cell.dataset.cellId = cellId;
+        
+        // アクセシビリティ属性を追加
+        cell.setAttribute('role', 'gridcell');
+        cell.setAttribute('tabindex', '-1');
+        cell.setAttribute('aria-label', `セル ${this.numberToColumn(col + 1)}${row + 1}`);
         
         // セルのサイズを設定
         if (this.cellSizes[cellId]) {
@@ -428,11 +473,20 @@ class BlackboardTemplateEditor {
         
         // キーボードショートカット
         document.addEventListener('keydown', (e) => {
+            // 入力フィールドにフォーカスがある場合はショートカットを無効化
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+            
             if (e.ctrlKey || e.metaKey) {
                 switch (e.key) {
                     case 'z':
                         e.preventDefault();
-                        this.undoAction();
+                        if (e.shiftKey) {
+                            this.redoAction();
+                        } else {
+                            this.undoAction();
+                        }
                         break;
                     case 'y':
                         e.preventDefault();
@@ -442,11 +496,63 @@ class BlackboardTemplateEditor {
                         e.preventDefault();
                         this.selectAll();
                         break;
+                    case 's':
+                        e.preventDefault();
+                        saveTemplate();
+                        break;
+                    case 'b':
+                        e.preventDefault();
+                        toggleFormat('bold');
+                        break;
+                    case 'i':
+                        e.preventDefault();
+                        toggleFormat('italic');
+                        break;
+                    case 'c':
+                        e.preventDefault();
+                        this.copySelectedCells();
+                        break;
+                    case 'v':
+                        e.preventDefault();
+                        this.pasteSelectedCells();
+                        break;
+                    case 'x':
+                        e.preventDefault();
+                        this.cutSelectedCells();
+                        break;
                 }
             }
             
-            if (e.key === 'Delete' || e.key === 'Backspace') {
-                this.deleteSelectedCells();
+            // 通常のキー操作
+            switch (e.key) {
+                case 'Delete':
+                case 'Backspace':
+                    e.preventDefault();
+                    this.deleteSelectedCells();
+                    break;
+                case 'F2':
+                    e.preventDefault();
+                    this.editSelectedCell();
+                    break;
+                case 'Escape':
+                    e.preventDefault();
+                    this.clearSelection();
+                    break;
+                case 'Enter':
+                    e.preventDefault();
+                    this.editSelectedCell();
+                    break;
+                case 'ArrowUp':
+                case 'ArrowDown':
+                case 'ArrowLeft':
+                case 'ArrowRight':
+                    e.preventDefault();
+                    this.navigateWithArrows(e.key, e.shiftKey);
+                    break;
+                case 'Tab':
+                    e.preventDefault();
+                    this.navigateWithTab(e.shiftKey);
+                    break;
             }
         });
     }
@@ -483,6 +589,158 @@ class BlackboardTemplateEditor {
             num = Math.floor(num / 26);
         }
         return result;
+    }
+    
+    // 選択中のセルを編集
+    editSelectedCell() {
+        if (this.selectedCells.size === 1) {
+            const cellId = [...this.selectedCells][0];
+            const [row, col] = cellId.split('-').map(Number);
+            this.editCell(row, col);
+        }
+    }
+    
+    // 矢印キーでナビゲーション
+    navigateWithArrows(key, shiftKey) {
+        if (!this.lastSelectedCell) return;
+        
+        let newRow = this.lastSelectedCell.row;
+        let newCol = this.lastSelectedCell.col;
+        
+        switch (key) {
+            case 'ArrowUp':
+                newRow = Math.max(0, newRow - 1);
+                break;
+            case 'ArrowDown':
+                newRow = Math.min(this.rows - 1, newRow + 1);
+                break;
+            case 'ArrowLeft':
+                newCol = Math.max(0, newCol - 1);
+                break;
+            case 'ArrowRight':
+                newCol = Math.min(this.cols - 1, newCol + 1);
+                break;
+        }
+        
+        if (shiftKey) {
+            // Shift+矢印キーで範囲選択
+            this.selectRange(this.lastSelectedCell.row, this.lastSelectedCell.col, newRow, newCol);
+        } else {
+            // 通常の移動
+            this.selectCell(newRow, newCol);
+        }
+        
+        this.updateCellProperties();
+    }
+    
+    // Tabキーでナビゲーション
+    navigateWithTab(shiftKey) {
+        if (!this.lastSelectedCell) {
+            this.selectCell(0, 0);
+            return;
+        }
+        
+        let newRow = this.lastSelectedCell.row;
+        let newCol = this.lastSelectedCell.col;
+        
+        if (shiftKey) {
+            // Shift+Tab で前のセルへ
+            newCol--;
+            if (newCol < 0) {
+                newCol = this.cols - 1;
+                newRow--;
+                if (newRow < 0) {
+                    newRow = this.rows - 1;
+                }
+            }
+        } else {
+            // Tab で次のセルへ
+            newCol++;
+            if (newCol >= this.cols) {
+                newCol = 0;
+                newRow++;
+                if (newRow >= this.rows) {
+                    newRow = 0;
+                }
+            }
+        }
+        
+        this.selectCell(newRow, newCol);
+        this.updateCellProperties();
+    }
+    
+    // セルをコピー
+    copySelectedCells() {
+        if (!this.selectedCells.size) return;
+        
+        this.clipboardData = {
+            cells: [],
+            operation: 'copy'
+        };
+        
+        this.selectedCells.forEach(cellId => {
+            const cellData = this.cellData[cellId] || {};
+            const cellType = this.cellTypes[cellId] || 'fixed';
+            const cellConfig = this.cellConfigs[cellId] || {};
+            const cellSize = this.cellSizes[cellId] || {};
+            const cellStyle = this.cellStyles[cellId] || {};
+            
+            this.clipboardData.cells.push({
+                cellId,
+                data: JSON.parse(JSON.stringify(cellData)),
+                type: cellType,
+                config: JSON.parse(JSON.stringify(cellConfig)),
+                size: JSON.parse(JSON.stringify(cellSize)),
+                style: JSON.parse(JSON.stringify(cellStyle))
+            });
+        });
+        
+        showSuccess(`${this.selectedCells.size}個のセルをコピーしました`);
+    }
+    
+    // セルをカット
+    cutSelectedCells() {
+        this.copySelectedCells();
+        if (this.clipboardData) {
+            this.clipboardData.operation = 'cut';
+            this.deleteSelectedCells();
+        }
+    }
+    
+    // セルをペースト
+    pasteSelectedCells() {
+        if (!this.clipboardData || !this.lastSelectedCell) {
+            showWarning('ペースト失敗', 'コピーされたデータがありません');
+            return;
+        }
+        
+        const startRow = this.lastSelectedCell.row;
+        const startCol = this.lastSelectedCell.col;
+        
+        this.clipboardData.cells.forEach((cellInfo, index) => {
+            const [originalRow, originalCol] = cellInfo.cellId.split('-').map(Number);
+            const newRow = startRow + (originalRow - this.clipboardData.cells[0].cellId.split('-')[0]);
+            const newCol = startCol + (originalCol - this.clipboardData.cells[0].cellId.split('-')[1]);
+            
+            if (newRow >= 0 && newRow < this.rows && newCol >= 0 && newCol < this.cols) {
+                const newCellId = `${newRow}-${newCol}`;
+                
+                this.cellData[newCellId] = cellInfo.data;
+                this.cellTypes[newCellId] = cellInfo.type;
+                this.cellConfigs[newCellId] = cellInfo.config;
+                this.cellSizes[newCellId] = cellInfo.size;
+                this.cellStyles[newCellId] = cellInfo.style;
+            }
+        });
+        
+        // カット操作の場合はクリップボードをクリア
+        if (this.clipboardData.operation === 'cut') {
+            this.clipboardData = null;
+        }
+        
+        this.createGrid();
+        this.saveState();
+        showSuccess('セルをペーストしました');
     }
     
     // 状態を保存（Undo/Redo用）
@@ -649,6 +907,66 @@ class BlackboardTemplateEditor {
         this.resizeData = null;
         document.body.classList.remove('resizing');
     }
+    
+    // 結合セルを復元
+    restoreMergedCells() {
+        console.debug('=== 結合セル復元処理開始 ===');
+        console.debug('RESTORE_DEBUG: 復元対象の結合セル数:', this.mergedCells.size);
+        console.debug('RESTORE_DEBUG: 復元対象の結合データ:', Array.from(this.mergedCells.entries()));
+        
+        this.mergedCells.forEach((mergeInfo, mergeKey) => {
+            console.debug('RESTORE_DEBUG: 結合復元中:', mergeKey, mergeInfo);
+            
+            try {
+                const { startCell, endCell, rowSpan, colSpan } = mergeInfo;
+                const [startRow, startCol] = startCell.split('-').map(Number);
+                const [endRow, endCol] = endCell.split('-').map(Number);
+                
+                console.debug('RESTORE_DEBUG: 結合範囲:', {
+                    startRow, startCol, endRow, endCol, rowSpan, colSpan
+                });
+                
+                // メインセル（左上）を取得
+                const mainCell = document.querySelector(`[data-cell-id="${startCell}"]`);
+                
+                if (mainCell) {
+                    // HTMLテーブルのcolspanとrowspanを設定
+                    mainCell.setAttribute('colspan', colSpan);
+                    mainCell.setAttribute('rowspan', rowSpan);
+                    mainCell.style.backgroundColor = '#e3f2fd'; // 結合セルの視覚的マーカー
+                    
+                    console.debug('RESTORE_DEBUG: メインセル設定完了:', {
+                        cellId: startCell,
+                        colspan: colSpan,
+                        rowspan: rowSpan
+                    });
+                    
+                    // 結合に含まれる他のセルを非表示にする
+                    let hiddenCount = 0;
+                    for (let row = startRow; row <= endRow; row++) {
+                        for (let col = startCol; col <= endCol; col++) {
+                            const cellId = `${row}-${col}`;
+                            if (cellId !== startCell) {
+                                const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
+                                if (cell) {
+                                    cell.style.display = 'none';
+                                    hiddenCount++;
+                                }
+                            }
+                        }
+                    }
+                    
+                    console.debug('RESTORE_DEBUG: 非表示にしたセル数:', hiddenCount);
+                } else {
+                    console.error('RESTORE_DEBUG: メインセルが見つかりません:', startCell);
+                }
+            } catch (error) {
+                console.error('RESTORE_DEBUG: 結合復元エラー:', error, mergeKey, mergeInfo);
+            }
+        });
+        
+        console.debug('=== 結合セル復元処理終了 ===');
+    }
 }
 
 // グローバル変数
@@ -666,6 +984,13 @@ document.addEventListener('DOMContentLoaded', function() {
         // 編集モード: 既存テンプレートを読み込み
         loadExistingTemplate(parseInt(editTemplateId));
     }
+    
+    // デバッグ情報を表示（5秒後）
+    setTimeout(() => {
+        console.log('🧪 セル結合デバッグ機能が有効です');
+        console.log('💡 debugHelp() と入力してデバッグ機能の使用方法を確認できます');
+        console.log('🐛 画面右上の「🐛 Debug」ボタンでデバッグコンソールを開けます');
+    }, 5000);
 });
 
 // 既存テンプレートを読み込み
@@ -758,11 +1083,51 @@ function loadExistingTemplate(templateId) {
                 }
             }
             
+            // 結合セル情報を読み込み
+            console.debug('=== 読み込み時の結合データデバッグ ===');
+            console.debug('LOAD_DEBUG: template.merged_cells:', template.merged_cells);
+            
+            if (template.merged_cells) {
+                try {
+                    const mergedCellsData = JSON.parse(template.merged_cells);
+                    console.debug('LOAD_DEBUG: パースされた結合データ:', mergedCellsData);
+                    
+                    editor.mergedCells = new Map(); // リセット
+                    
+                    // 配列かオブジェクトかを判定
+                    if (Array.isArray(mergedCellsData)) {
+                        // 配列形式の場合
+                        mergedCellsData.forEach(([key, value]) => {
+                            editor.mergedCells.set(key, value);
+                            console.debug('LOAD_DEBUG: 結合情報を復元:', key, value);
+                        });
+                    } else if (typeof mergedCellsData === 'object') {
+                        // オブジェクト形式の場合
+                        Object.entries(mergedCellsData).forEach(([key, value]) => {
+                            editor.mergedCells.set(key, value);
+                            console.debug('LOAD_DEBUG: 結合情報を復元:', key, value);
+                        });
+                    }
+                    
+                    console.debug('LOAD_DEBUG: 復元された結合セル数:', editor.mergedCells.size);
+                    console.debug('LOAD_DEBUG: 復元された結合データ:', Array.from(editor.mergedCells.entries()));
+                } catch (e) {
+                    console.error('LOAD_DEBUG: 結合セルの解析に失敗:', e);
+                }
+            } else {
+                console.debug('LOAD_DEBUG: 結合セルデータがありません');
+                editor.mergedCells = new Map();
+            }
+            
+            console.debug('=== 読み込み時の結合データデバッグ終了 ===');
+            
             // 編集用のテンプレートIDを保存
             editor.editingTemplateId = templateId;
             
             // グリッドを再作成
+            console.debug('LOAD_DEBUG: グリッド再作成前の結合データ:', Array.from(editor.mergedCells.entries()));
             editor.createGrid();
+            console.debug('LOAD_DEBUG: グリッド再作成後の結合データ:', Array.from(editor.mergedCells.entries()));
             
             // ページタイトルを変更
             document.querySelector('h1').innerHTML = '<i class="fas fa-edit"></i> テンプレート編集: ' + template.name;
@@ -1081,15 +1446,31 @@ function redoAction() {
     editor.redoAction();
 }
 
-// テンプレートを保存
+// テンプレートを保存（パフォーマンス測定付き）
 function saveTemplate() {
+    performance.mark('saveTemplate-start');
+    
     const name = document.getElementById('templateName').value;
     const description = document.getElementById('templateDescription').value;
     const width = parseInt(document.getElementById('templateWidth').value);
     const height = parseInt(document.getElementById('templateHeight').value);
     
+    // 基本バリデーション
     if (!name.trim()) {
-        alert('テンプレート名を入力してください');
+        showError('入力エラー', 'テンプレート名を入力してください');
+        document.getElementById('templateName').focus();
+        return;
+    }
+    
+    if (isNaN(width) || width < 100 || width > 2000) {
+        showError('入力エラー', '幅は100px〜2000pxの範囲で入力してください');
+        document.getElementById('templateWidth').focus();
+        return;
+    }
+    
+    if (isNaN(height) || height < 100 || height > 1500) {
+        showError('入力エラー', '高さは100px〜1500pxの範囲で入力してください');
+        document.getElementById('templateHeight').focus();
         return;
     }
     
@@ -1131,7 +1512,23 @@ function saveTemplate() {
         }
     });
     templateData.cell_styles = cellStyles;
-    console.log('🎨 最終的な cellStyles:', cellStyles);
+    
+    // 結合セルの保存デバッグ
+    console.debug('=== 保存時の結合データデバッグ ===');
+    console.debug('SAVE_DEBUG: 結合セル数:', editor.mergedCells.size);
+    console.debug('SAVE_DEBUG: 結合データ:', Array.from(editor.mergedCells.entries()));
+    console.debug('SAVE_DEBUG: templateData.merged_cells:', templateData.merged_cells);
+    console.debug('SAVE_DEBUG: JSON化された結合データ:', JSON.stringify(templateData.merged_cells));
+    
+    // サーバーに送信される完全なテンプレートデータを出力
+    console.debug('SAVE_DEBUG: 完全なテンプレートデータ:', {
+        name: templateData.name,
+        rows: templateData.rows,
+        cols: templateData.cols,
+        mergedCellsCount: templateData.merged_cells ? templateData.merged_cells.length : 0,
+        mergedCellsData: templateData.merged_cells
+    });
+    console.debug('=== 保存時の結合データデバッグ終了 ===');
     
     // 編集モードか新規作成モードかを判定
     if (editor.editingTemplateId) {
@@ -1386,3 +1783,280 @@ function previewTemplate() {
     const modal = new bootstrap.Modal(document.getElementById('previewModal'));
     modal.show();
 }
+
+// バリデーション関数
+function validateTemplateData(templateData) {
+    if (!templateData.name || templateData.name.trim().length === 0) {
+        return { isValid: false, message: 'テンプレート名は必須です' };
+    }
+    
+    if (templateData.name.length > 255) {
+        return { isValid: false, message: 'テンプレート名は255文字以内で入力してください' };
+    }
+    
+    if (templateData.description && templateData.description.length > 1000) {
+        return { isValid: false, message: '説明は1000文字以内で入力してください' };
+    }
+    
+    if (templateData.default_width < 100 || templateData.default_width > 2000) {
+        return { isValid: false, message: '幅は100px〜2000pxの範囲で入力してください' };
+    }
+    
+    if (templateData.default_height < 100 || templateData.default_height > 1500) {
+        return { isValid: false, message: '高さは100px〜1500pxの範囲で入力してください' };
+    }
+    
+    if (templateData.rows < 1 || templateData.rows > 50) {
+        return { isValid: false, message: '行数は1〜50の範囲で設定してください' };
+    }
+    
+    if (templateData.cols < 1 || templateData.cols > 26) {
+        return { isValid: false, message: '列数は1〜26の範囲で設定してください' };
+    }
+    
+    return { isValid: true, message: '' };
+}
+
+// 通知関数
+function showLoading(message) {
+    hideAllNotifications();
+    
+    const loading = document.createElement('div');
+    loading.id = 'loading-notification';
+    loading.className = 'notification loading';
+    loading.innerHTML = `
+        <div class="notification-content">
+            <div class="spinner"></div>
+            <span>${message}</span>
+        </div>
+    `;
+    
+    document.body.appendChild(loading);
+}
+
+function hideLoading() {
+    const loading = document.getElementById('loading-notification');
+    if (loading) {
+        loading.remove();
+    }
+}
+
+function showSuccess(message) {
+    showNotification('success', message, 3000);
+}
+
+function showError(title, message) {
+    showNotification('error', `${title}: ${message}`, 5000);
+}
+
+function showWarning(title, message) {
+    showNotification('warning', `${title}: ${message}`, 4000);
+}
+
+function showNotification(type, message, duration = 3000) {
+    hideAllNotifications();
+    
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.innerHTML = `
+        <div class="notification-content">
+            <i class="fas ${getIconForType(type)}"></i>
+            <span>${message}</span>
+            <button class="notification-close" onclick="this.parentElement.parentElement.remove()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // アニメーション
+    requestAnimationFrame(() => {
+        notification.classList.add('show');
+    });
+    
+    // 自動削除
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.classList.remove('show');
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.remove();
+                }
+            }, 300);
+        }
+    }, duration);
+}
+
+function getIconForType(type) {
+    switch (type) {
+        case 'success': return 'fa-check-circle';
+        case 'error': return 'fa-exclamation-circle';
+        case 'warning': return 'fa-exclamation-triangle';
+        default: return 'fa-info-circle';
+    }
+}
+
+function hideAllNotifications() {
+    document.querySelectorAll('.notification').forEach(notification => {
+        notification.remove();
+    });
+}
+
+// キーボードショートカットを表示
+function showKeyboardShortcuts() {
+    const modal = new bootstrap.Modal(document.getElementById('shortcutsModal'));
+    modal.show();
+}
+
+// デバッグ用テスト関数（グローバル）
+window.debugMergeTest = function() {
+    console.debug('=== 結合セル保存・読み込みテスト開始 ===');
+    
+    if (!editor) {
+        console.error('エディタが初期化されていません');
+        return;
+    }
+    
+    // 現在の結合セルデータを出力
+    console.debug('DEBUG_TEST: 現在の結合セル数:', editor.mergedCells.size);
+    console.debug('DEBUG_TEST: 現在の結合データ:', Array.from(editor.mergedCells.entries()));
+    
+    // テストデータを作成
+    const testMergeData = new Map();
+    testMergeData.set('0-0_1-1', {
+        startCell: '0-0',
+        endCell: '1-1',
+        rowSpan: 2,
+        colSpan: 2
+    });
+    testMergeData.set('2-2_3-3', {
+        startCell: '2-2',
+        endCell: '3-3',
+        rowSpan: 2,
+        colSpan: 2
+    });
+    
+    // テストデータをエディタに設定
+    editor.mergedCells = testMergeData;
+    console.debug('DEBUG_TEST: テスト用結合データ設定:', Array.from(editor.mergedCells.entries()));
+    
+    // 保存処理をシミュレート
+    const templateData = {
+        name: 'デバッグテスト',
+        merged_cells: Array.from(editor.mergedCells.entries())
+    };
+    
+    console.debug('DEBUG_TEST: 保存用データ:', templateData);
+    console.debug('DEBUG_TEST: JSON化された結合データ:', JSON.stringify(templateData.merged_cells));
+    
+    // 読み込み処理をシミュレート
+    const mergedCellsData = JSON.parse(JSON.stringify(templateData.merged_cells));
+    console.debug('DEBUG_TEST: 読み込みデータ:', mergedCellsData);
+    
+    // 復元処理をシミュレート
+    const restoredMap = new Map();
+    if (Array.isArray(mergedCellsData)) {
+        mergedCellsData.forEach(([key, value]) => {
+            restoredMap.set(key, value);
+            console.debug('DEBUG_TEST: 復元中:', key, value);
+        });
+    }
+    
+    console.debug('DEBUG_TEST: 復元されたMap:', Array.from(restoredMap.entries()));
+    console.debug('DEBUG_TEST: 元データと復元データの比較:', {
+        original: Array.from(editor.mergedCells.entries()),
+        restored: Array.from(restoredMap.entries()),
+        equal: JSON.stringify(Array.from(editor.mergedCells.entries())) === JSON.stringify(Array.from(restoredMap.entries()))
+    });
+    
+    // 実際の復元処理をテスト
+    editor.mergedCells = restoredMap;
+    console.debug('DEBUG_TEST: 復元後のエディタ結合データ:', Array.from(editor.mergedCells.entries()));
+    
+    // 視覚的復元をテスト
+    editor.restoreMergedCells();
+    
+    console.debug('=== 結合セル保存・読み込みテスト終了 ===');
+    console.log('🧪 テストが完了しました。デバッグコンソールで結果を確認してください。');
+    
+    // デバッグコンソールを自動的に開く
+    if (window.debugConsole && !window.debugConsole.isVisible) {
+        window.debugConsole.toggle();
+    }
+};
+
+// 実際のAPI保存・読み込みテスト
+window.debugApiMergeTest = function() {
+    console.debug('=== API経由結合セル保存・読み込みテスト開始 ===');
+    
+    if (!editor) {
+        console.error('エディタが初期化されていません');
+        return;
+    }
+    
+    // テストのために実際にセルを結合
+    console.debug('API_TEST: 2×2の結合セルを作成します...');
+    editor.selectedCells = new Set(['0-0', '0-1', '1-0', '1-1']);
+    mergeCells();
+    
+    console.debug('API_TEST: 結合後のデータ:', Array.from(editor.mergedCells.entries()));
+    
+    // 一時的にテンプレート名を設定
+    document.getElementById('templateName').value = 'APIテスト_' + Date.now();
+    
+    console.debug('API_TEST: 保存を開始します...');
+    
+    // 保存実行
+    saveTemplate();
+    
+    console.debug('=== API経由結合セル保存・読み込みテスト終了 ===');
+    console.log('🧪 APIテストが開始されました。ネットワークタブとデバッグコンソールで結果を確認してください。');
+};
+
+// デバッグコンソールの状態確認
+window.checkDebugConsole = function() {
+    console.debug('=== デバッグコンソール状態確認 ===');
+    console.debug('DEBUG_CHECK: debugConsole存在:', !!window.debugConsole);
+    console.debug('DEBUG_CHECK: debugConsole表示状態:', window.debugConsole ? window.debugConsole.isVisible : 'N/A');
+    console.debug('DEBUG_CHECK: console.debug動作確認:', '正常に動作しています');
+    console.log('DEBUG_CHECK: console.log動作確認:', '正常に動作しています');
+    console.warn('DEBUG_CHECK: console.warn動作確認:', '正常に動作しています');
+    console.error('DEBUG_CHECK: console.error動作確認:', '正常に動作しています');
+    
+    // デバッグコンソールを開く
+    if (window.debugConsole && !window.debugConsole.isVisible) {
+        window.debugConsole.toggle();
+        console.debug('DEBUG_CHECK: デバッグコンソールを開きました');
+    }
+    
+    console.debug('=== デバッグコンソール状態確認終了 ===');
+};
+
+// デバッグヘルプ表示
+window.debugHelp = function() {
+    console.log('🧪 === デバッグ支援機能 ===');
+    console.log('');
+    console.log('利用可能なデバッグ関数:');
+    console.log('• checkDebugConsole() - デバッグコンソールの状態確認');
+    console.log('• debugMergeTest() - 結合セルの保存・読み込み機能テスト');
+    console.log('• debugApiMergeTest() - API経由での実際の保存・読み込みテスト');
+    console.log('• debugHelp() - このヘルプ表示');
+    console.log('');
+    console.log('デバッグコンソールアクセス:');
+    console.log('• 画面右上の「🐛 Debug」ボタン、または');
+    console.log('• debugConsole.toggle()');
+    console.log('');
+    console.log('問題の再現手順:');
+    console.log('1. checkDebugConsole() でデバッグ環境確認');
+    console.log('2. 手動でセル結合を作成');
+    console.log('3. 保存ボタンで保存');
+    console.log('4. ページを再読み込み');
+    console.log('5. デバッグコンソールで結合データの有無を確認');
+    console.log('');
+    console.log('自動テスト:');
+    console.log('• debugMergeTest() - ローカルテスト');
+    console.log('• debugApiMergeTest() - APIテスト');
+    console.log('');
+    console.log('🔍 問題特定のために、保存・読み込み時のデバッグ出力を確認してください。');
+};
