@@ -7,8 +7,10 @@ from database import get_db
 from models.photo import Photo
 from models.project import Project
 from models.subproject import SubProject
+from models.blackboard_data import BlackboardData
 import os
 import uuid
+import json
 from pathlib import Path
 
 router = APIRouter(
@@ -70,6 +72,7 @@ async def upload_photo(
     file: UploadFile = File(...),
     project_id: int = Form(...),
     subproject_id: Optional[int] = Form(None),
+    blackboard_data: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """写真のアップロード"""
@@ -107,6 +110,26 @@ async def upload_photo(
     db.add(db_photo)
     db.commit()
     db.refresh(db_photo)
+    
+    # 黒板データがある場合は保存
+    if blackboard_data:
+        try:
+            board_data = json.loads(blackboard_data)
+            db_blackboard = BlackboardData(
+                photo_id=db_photo.id,
+                survey_number=board_data.get('survey_number', ''),
+                building_number=board_data.get('building_number', ''),
+                owner=board_data.get('owner', ''),
+                damage_type=board_data.get('damage_type', ''),
+                damage_size=board_data.get('damage_size', ''),
+                damage_location=board_data.get('damage_location', ''),
+                photo_number=board_data.get('photo_number', '')
+            )
+            db.add(db_blackboard)
+            db.commit()
+        except json.JSONDecodeError:
+            # 黒板データのJSONが無効な場合は無視
+            pass
     
     return db_photo
 

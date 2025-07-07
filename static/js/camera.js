@@ -155,13 +155,10 @@ function toggleFlash() {
 
 // 終了処理
 function exitFullscreen() {
-    console.debug('撮影画面終了処理を開始');
-    
     try {
         // カメラストリームを停止
         if (currentStream) {
             currentStream.getTracks().forEach(track => {
-                console.debug('トラックを停止:', track.kind);
                 track.stop();
             });
             currentStream = null;
@@ -179,22 +176,12 @@ function exitFullscreen() {
             main.style.padding = '';
         }
         
-        console.debug('画面復元処理完了');
-        
         // 前のページに戻る
         if (window.history.length > 1) {
-            console.debug('履歴で前のページに戻る');
             window.history.back();
         } else {
-            console.debug('ホームページに遷移');
             window.location.href = '/';
         }
-        
-        // フォールバック: 一定時間後に強制遷移
-        setTimeout(() => {
-            console.debug('フォールバック: 強制ホーム遷移');
-            window.location.href = '/';
-        }, 1000);
         
     } catch (error) {
         console.error('終了処理でエラー:', error);
