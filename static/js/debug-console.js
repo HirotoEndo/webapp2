@@ -3,7 +3,8 @@ class DebugConsole {
     constructor() {
         this.logs = [];
         this.isVisible = false;
-        this.maxLogs = 100;
+        this.maxLogs = 200; // ログ数を増やして履歴を確保
+        this.autoScroll = true; // 自動スクロールフラグ
         this.init();
     }
 
@@ -20,6 +21,9 @@ class DebugConsole {
                 <div class="debug-header">
                     <span class="debug-title">🐛 デバッグコンソール</span>
                     <div class="debug-controls">
+                        <button onclick="debugConsole.toggleAutoScroll()" class="debug-btn" id="autoScrollBtn">自動スクロール: ON</button>
+                        <button onclick="debugConsole.scrollToBottom()" class="debug-btn">↓ 最新へ</button>
+                        <button onclick="debugConsole.copyAllLogs()" class="debug-btn">📋 コピー</button>
                         <button onclick="debugConsole.clear()" class="debug-btn">クリア</button>
                         <button onclick="debugConsole.downloadLogs()" class="debug-btn">ダウンロード</button>
                         <button onclick="debugConsole.toggle()" class="debug-btn">×</button>
@@ -103,6 +107,27 @@ class DebugConsole {
                 padding: 8px;
                 font-size: 11px;
                 line-height: 1.3;
+                scroll-behavior: smooth;
+                border: 1px solid #444;
+                border-radius: 3px;
+                background: #111;
+            }
+            
+            .debug-logs::-webkit-scrollbar {
+                width: 8px;
+            }
+            
+            .debug-logs::-webkit-scrollbar-track {
+                background: #333;
+            }
+            
+            .debug-logs::-webkit-scrollbar-thumb {
+                background: #666;
+                border-radius: 4px;
+            }
+            
+            .debug-logs::-webkit-scrollbar-thumb:hover {
+                background: #888;
             }
 
             .debug-input-section {
@@ -178,6 +203,14 @@ class DebugConsole {
                 this.executeCommand();
             }
         });
+        
+        // スクロール監視を追加
+        const logsContainer = document.getElementById('debugLogs');
+        if (logsContainer) {
+            logsContainer.addEventListener('scroll', () => {
+                this.checkAutoScroll();
+            });
+        }
     }
 
     addToggleButton() {
@@ -264,7 +297,46 @@ class DebugConsole {
         `).join('');
 
         logsContainer.innerHTML = logsHTML;
-        logsContainer.scrollTop = logsContainer.scrollHeight;
+        
+        // 自動スクロールが有効な場合のみ最下部へスクロール
+        if (this.autoScroll) {
+            this.scrollToBottom();
+        }
+    }
+    
+    checkAutoScroll() {
+        const logsContainer = document.getElementById('debugLogs');
+        if (!logsContainer) return;
+        
+        // ユーザーが手動でスクロールした場合、自動スクロールを一時的に無効化
+        const isAtBottom = logsContainer.scrollHeight - logsContainer.clientHeight <= logsContainer.scrollTop + 1;
+        if (!isAtBottom) {
+            this.autoScroll = false;
+            this.updateAutoScrollButton();
+        }
+    }
+    
+    scrollToBottom() {
+        const logsContainer = document.getElementById('debugLogs');
+        if (logsContainer) {
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+    }
+    
+    toggleAutoScroll() {
+        this.autoScroll = !this.autoScroll;
+        this.updateAutoScrollButton();
+        if (this.autoScroll) {
+            this.scrollToBottom();
+        }
+    }
+    
+    updateAutoScrollButton() {
+        const btn = document.getElementById('autoScrollBtn');
+        if (btn) {
+            btn.textContent = `自動スクロール: ${this.autoScroll ? 'ON' : 'OFF'}`;
+            btn.style.background = this.autoScroll ? '#28a745' : '#444';
+        }
     }
 
     toggle() {
@@ -284,6 +356,49 @@ class DebugConsole {
     clear() {
         this.logs = [];
         this.updateLogDisplay();
+    }
+
+    copyAllLogs() {
+        const logsText = this.logs.map(log => 
+            `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
+        ).join('\n');
+
+        if (navigator.clipboard && window.isSecureContext) {
+            // モダンブラウザでクリップボードAPIを使用
+            navigator.clipboard.writeText(logsText).then(() => {
+                this.addLog('info', ['📋 ログをクリップボードにコピーしました']);
+            }).catch(err => {
+                this.addLog('error', ['クリップボードへのコピーに失敗:', err]);
+                this.fallbackCopyTextToClipboard(logsText);
+            });
+        } else {
+            // フォールバック方法
+            this.fallbackCopyTextToClipboard(logsText);
+        }
+    }
+
+    fallbackCopyTextToClipboard(text) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        
+        // 画面に見えないように設定
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+            const successful = document.execCommand('copy');
+            const msg = successful ? 'ログをクリップボードにコピーしました' : 'コピーに失敗しました';
+            this.addLog('info', ['📋', msg]);
+        } catch (err) {
+            this.addLog('error', ['クリップボードへのコピーに失敗:', err]);
+        }
+
+        document.body.removeChild(textArea);
     }
 
     downloadLogs() {

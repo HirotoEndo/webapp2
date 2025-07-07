@@ -337,8 +337,10 @@ def create_web_template(template_data: dict, db: Session = Depends(get_db)):
                 row, col = map(int, cell_id.split('-'))
                 excel_address = f"{chr(65 + col)}{row + 1}"
                 
-                # CSSスタイルをExcel風に変換
+                # CSSスタイルとクラス名をそのまま保存
                 cell_style = {
+                    'style': style_data.get('style', ''),
+                    'className': style_data.get('className', ''),
                     'border': {'left': {}, 'right': {}, 'top': {}, 'bottom': {}},
                     'fill': {},
                     'font': {},
@@ -347,6 +349,11 @@ def create_web_template(template_data: dict, db: Session = Depends(get_db)):
                 
                 if style_data.get('style'):
                     css_style = style_data['style']
+                    
+                    # text-alignを特別に処理
+                    if 'text-align:' in css_style:
+                        text_align = css_style.split('text-align:')[1].split(';')[0].strip()
+                        cell_style['alignment']['horizontal'] = text_align
                     
                     # 背景色
                     if 'background-color' in css_style:
@@ -373,6 +380,9 @@ def create_web_template(template_data: dict, db: Session = Depends(get_db)):
                         cell_style['alignment']['horizontal'] = 'right'
                 
                 cell_styles[excel_address] = cell_style
+                
+                # 同じスタイルを内部ID形式でも保存（カメラ画面での利用のため）
+                cell_styles[cell_id] = cell_style
         
         # 結合セル情報を変換
         merged_cells = []
@@ -388,10 +398,12 @@ def create_web_template(template_data: dict, db: Session = Depends(get_db)):
         # セルタイプとセル設定データを処理
         cell_types = template_data.get('cell_types', {})
         cell_configs = template_data.get('cell_configs', {})
+        cell_sizes = template_data.get('cell_sizes', {})
         
         # レイアウト設定にセルタイプとセル設定を追加
         layout_config['cell_types'] = cell_types
         layout_config['cell_configs'] = cell_configs
+        layout_config['cell_sizes'] = cell_sizes
         
         # データベースに保存
         db_template = Layout(

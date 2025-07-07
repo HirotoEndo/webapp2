@@ -89,13 +89,59 @@
         vertical-align: top;
     }
     
-    .grid-cell:hover {
-        background: #e3f2fd;
-    }
-    
     .grid-cell.selected {
         background: #bbdefb;
         outline: 2px solid #2196f3;
+    }
+    
+    /* リサイズハンドル */
+    .resize-handle {
+        position: absolute;
+        background: #2196f3;
+        z-index: 1000;
+    }
+    
+    .resize-handle-right {
+        right: -3px;
+        top: 0;
+        width: 6px;
+        height: 100%;
+        cursor: col-resize;
+    }
+    
+    .resize-handle-bottom {
+        bottom: -3px;
+        left: 0;
+        width: 100%;
+        height: 6px;
+        cursor: row-resize;
+    }
+    
+    .resize-handle-corner {
+        right: -3px;
+        bottom: -3px;
+        width: 6px;
+        height: 6px;
+        cursor: nw-resize;
+        background: #1976d2;
+    }
+    
+    /* リサイズ中のスタイル */
+    .resizing {
+        user-select: none;
+        pointer-events: none;
+    }
+    
+    .resize-preview {
+        position: absolute;
+        border: 2px dashed #2196f3;
+        background: rgba(33, 150, 243, 0.1);
+        pointer-events: none;
+        z-index: 999;
+    }
+    
+    .grid-cell:hover {
+        background: #e3f2fd;
     }
     
     .grid-cell.multi-selected {
@@ -322,6 +368,29 @@
                 <button type="button" class="btn btn-outline-secondary" onclick="setBorderStyle('solid')">実線</button>
                 <button type="button" class="btn btn-outline-secondary" onclick="setBorderStyle('dashed')">破線</button>
                 <button type="button" class="btn btn-outline-secondary" onclick="setBorderStyle('dotted')">点線</button>
+            </div>
+        </div>
+
+        <!-- セルサイズ設定 -->
+        <div class="property-group">
+            <h6><i class="fas fa-expand-alt"></i> セルサイズ</h6>
+            <div class="row mb-2">
+                <div class="col-6">
+                    <label class="form-label">幅 (px)</label>
+                    <input type="number" id="cellWidth" class="form-control form-control-sm" min="20" max="500" value="80" onchange="updateCellSize()">
+                </div>
+                <div class="col-6">
+                    <label class="form-label">高さ (px)</label>
+                    <input type="number" id="cellHeight" class="form-control form-control-sm" min="20" max="200" value="30" onchange="updateCellSize()">
+                </div>
+            </div>
+            <div class="d-grid gap-2">
+                <button class="btn btn-outline-info btn-sm" onclick="autoSizeCell()">
+                    <i class="fas fa-compress-alt"></i> 自動調整
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="resetCellSize()">
+                    <i class="fas fa-undo"></i> サイズリセット
+                </button>
             </div>
         </div>
 

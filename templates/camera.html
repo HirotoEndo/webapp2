@@ -72,15 +72,14 @@
         position: absolute;
         top: 50px;
         right: 50px;
-        background: rgba(255, 255, 255, 0.95);
-        padding: 15px;
-        border-radius: 10px;
-        border: 2px solid #333;
-        min-width: 300px;
-        max-width: 400px;
+        background: transparent;
+        padding: 0;
+        border: none;
+        min-width: auto;
+        max-width: none;
         z-index: 10;
         cursor: move;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        box-shadow: none;
     }
     
     .blackboard-table {
@@ -94,16 +93,17 @@
         border: 1px solid #333;
         padding: 4px 6px;
         text-align: left;
+        background: rgba(255, 255, 255, 0.95);
     }
     
     .blackboard-table th {
-        background: #f0f0f0;
+        background: rgba(240, 240, 240, 0.95);
         font-weight: bold;
         font-size: 10px;
     }
     
     .blackboard-table td {
-        background: white;
+        background: rgba(255, 255, 255, 0.95);
         font-size: 11px;
     }
     
@@ -150,16 +150,38 @@
         top: 70px;
         left: 20px;
         width: 320px;
-        max-height: calc(100vh - 200px);
+        max-height: calc(100vh - 140px);
         background: rgba(255, 255, 255, 0.95);
         border-radius: 10px;
         padding: 20px;
         z-index: 12;
         overflow-y: auto;
+        overflow-x: hidden;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         backdrop-filter: blur(10px);
         transform: translateX(-100%);
         transition: transform 0.3s ease;
+        scrollbar-width: thin;
+        scrollbar-color: #007bff rgba(255, 255, 255, 0.3);
+    }
+    
+    /* Webkit ブラウザ用のスクロールバーカスタマイズ */
+    .blackboard-edit-panel::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .blackboard-edit-panel::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+    }
+    
+    .blackboard-edit-panel::-webkit-scrollbar-thumb {
+        background: #007bff;
+        border-radius: 4px;
+    }
+    
+    .blackboard-edit-panel::-webkit-scrollbar-thumb:hover {
+        background: #0056b3;
     }
     
     .blackboard-edit-panel.open {
@@ -258,6 +280,7 @@
             width: calc(100vw - 40px);
             left: 20px;
             right: 20px;
+            max-height: calc(100vh - 200px);
         }
         
         .quality-panel {
@@ -481,7 +504,7 @@
             <!-- プロジェクト選択 -->
             <div class="form-group">
                 <label>プロジェクト</label>
-                <select id="projectSelect" class="form-control" onchange="loadSubprojects()">
+                <select id="projectSelect" class="form-control" onchange="loadSubprojects(); generatePhotoNumber();">
                     <option value="">プロジェクトを選択...</option>
                 </select>
             </div>
@@ -489,7 +512,7 @@
             <!-- サブプロジェクト選択 -->
             <div class="form-group">
                 <label>エリア</label>
-                <select id="subprojectSelect" class="form-control">
+                <select id="subprojectSelect" class="form-control" onchange="generatePhotoNumber();">
                     <option value="">エリアを選択...</option>
                 </select>
             </div>
@@ -653,5 +676,6 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', path='/js/debug-console.js') }}"></script>
 <script src="{{ url_for('static', path='/js/camera.js') }}"></script>
 {% endblock %}

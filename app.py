@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from database import create_tables
-from routers import projects, photos, templates as template_router, export, subprojects
+from routers import projects, photos, templates as template_router, export, subprojects, blackboard
 import logging
 import traceback
 
@@ -47,6 +47,7 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 templates = Jinja2Templates(directory="templates")
 
 # ルーターを追加
@@ -55,6 +56,7 @@ app.include_router(subprojects.router)
 app.include_router(photos.router)
 app.include_router(template_router.router)
 app.include_router(export.router)
+app.include_router(blackboard.router)
 
 # カスタムエラーハンドラー
 @app.exception_handler(Exception)

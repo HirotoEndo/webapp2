@@ -8,10 +8,13 @@ class BlackboardTemplateEditor {
         this.cellData = {};
         this.cellTypes = {}; // セルタイプデータ（fixed/variable）
         this.cellConfigs = {}; // セル設定データ（ドロップダウン選択肢など）
+        this.cellSizes = {}; // セルサイズデータ（幅・高さ）
         this.mergedCells = new Map();
         this.history = [];
         this.historyIndex = -1;
         this.isSelecting = false;
+        this.isResizing = false; // リサイズ中フラグ
+        this.resizeData = null; // リサイズデータ
         
         this.init();
     }
@@ -76,6 +79,13 @@ class BlackboardTemplateEditor {
         cell.dataset.row = row;
         cell.dataset.col = col;
         cell.dataset.cellId = cellId;
+        
+        // セルのサイズを設定
+        if (this.cellSizes[cellId]) {
+            const size = this.cellSizes[cellId];
+            if (size.width) cell.style.width = size.width + 'px';
+            if (size.height) cell.style.height = size.height + 'px';
+        }
         
         // セルの内容を設定
         if (this.cellData[cellId]) {
@@ -207,6 +217,10 @@ class BlackboardTemplateEditor {
     // グリッド表示を更新
     updateGridDisplay() {
         const cells = document.querySelectorAll('.grid-cell');
+        
+        // 既存のリサイズハンドルを削除
+        document.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+        
         cells.forEach(cell => {
             const cellId = cell.dataset.cellId;
             cell.classList.remove('selected', 'multi-selected');
@@ -214,11 +228,34 @@ class BlackboardTemplateEditor {
             if (this.selectedCells.has(cellId)) {
                 if (this.selectedCells.size === 1) {
                     cell.classList.add('selected');
+                    // 単一セル選択時のみリサイズハンドルを追加
+                    this.addResizeHandles(cell);
                 } else {
                     cell.classList.add('multi-selected');
                 }
             }
         });
+    }
+    
+    // リサイズハンドルを追加
+    addResizeHandles(cell) {
+        // 右端ハンドル
+        const rightHandle = document.createElement('div');
+        rightHandle.className = 'resize-handle resize-handle-right';
+        rightHandle.addEventListener('mousedown', (e) => this.startResize(e, cell, 'width'));
+        cell.appendChild(rightHandle);
+        
+        // 下端ハンドル
+        const bottomHandle = document.createElement('div');
+        bottomHandle.className = 'resize-handle resize-handle-bottom';
+        bottomHandle.addEventListener('mousedown', (e) => this.startResize(e, cell, 'height'));
+        cell.appendChild(bottomHandle);
+        
+        // 右下角ハンドル
+        const cornerHandle = document.createElement('div');
+        cornerHandle.className = 'resize-handle resize-handle-corner';
+        cornerHandle.addEventListener('mousedown', (e) => this.startResize(e, cell, 'both'));
+        cell.appendChild(cornerHandle);
     }
     
     // 選択情報を更新
@@ -275,6 +312,7 @@ class BlackboardTemplateEditor {
             const cellData = this.cellData[cellId];
             const cellType = this.cellTypes[cellId] || 'fixed';
             const cellConfig = this.cellConfigs[cellId] || {};
+            const cellSize = this.cellSizes[cellId] || { width: 80, height: 30 };
             
             // テキスト設定
             document.getElementById('cellText').value = cellData?.text || '';
@@ -282,6 +320,12 @@ class BlackboardTemplateEditor {
             // セルタイプ設定
             document.getElementById('cellTypeFixed').checked = cellType === 'fixed';
             document.getElementById('cellTypeVariable').checked = cellType === 'variable';
+            
+            // セルサイズ設定
+            document.getElementById('cellWidth').value = cellSize.width || 80;
+            document.getElementById('cellHeight').value = cellSize.height || 30;
+            
+            console.log('セルサイズをUIに反映:', cellId, cellSize);
             
             // 可変セル設定
             if (cellType === 'variable') {
@@ -297,6 +341,8 @@ class BlackboardTemplateEditor {
             document.getElementById('cellTypeFixed').checked = true;
             document.getElementById('cellTypeVariable').checked = false;
             document.getElementById('variableCellSettings').style.display = 'none';
+            document.getElementById('cellWidth').value = 80;
+            document.getElementById('cellHeight').value = 30;
         }
     }
     
@@ -364,6 +410,10 @@ class BlackboardTemplateEditor {
             this.updateCellConfig('allowOther', e.target.checked);
         });
         
+        // グローバルマウスイベント（リサイズ用）
+        document.addEventListener('mousemove', (e) => this.onMouseMove(e));
+        document.addEventListener('mouseup', (e) => this.onMouseUp(e));
+        
         // キーボードショートカット
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey) {
@@ -429,6 +479,7 @@ class BlackboardTemplateEditor {
             cellData: JSON.parse(JSON.stringify(this.cellData)),
             cellTypes: JSON.parse(JSON.stringify(this.cellTypes)),
             cellConfigs: JSON.parse(JSON.stringify(this.cellConfigs)),
+            cellSizes: JSON.parse(JSON.stringify(this.cellSizes)),
             mergedCells: new Map(this.mergedCells),
             rows: this.rows,
             cols: this.cols
@@ -467,6 +518,7 @@ class BlackboardTemplateEditor {
         this.cellData = state.cellData;
         this.cellTypes = state.cellTypes || {};
         this.cellConfigs = state.cellConfigs || {};
+        this.cellSizes = state.cellSizes || {};
         this.mergedCells = state.mergedCells;
         this.rows = state.rows;
         this.cols = state.cols;
@@ -483,6 +535,108 @@ class BlackboardTemplateEditor {
         this.createGrid();
         this.saveState();
     }
+    
+    // リサイズ開始
+    startResize(e, cell, direction) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log('リサイズ開始:', direction);
+        
+        this.isResizing = true;
+        document.body.classList.add('resizing');
+        
+        const cellRect = cell.getBoundingClientRect();
+        const cellId = cell.dataset.cellId;
+        
+        this.resizeData = {
+            cell: cell,
+            cellId: cellId,
+            direction: direction,
+            startX: e.clientX,
+            startY: e.clientY,
+            startWidth: cellRect.width,
+            startHeight: cellRect.height,
+            originalWidth: cell.style.width || cellRect.width + 'px',
+            originalHeight: cell.style.height || cellRect.height + 'px'
+        };
+        
+        console.log('リサイズデータ:', this.resizeData);
+    }
+    
+    // マウス移動（リサイズ中）
+    onMouseMove(e) {
+        if (!this.isResizing || !this.resizeData) return;
+        
+        e.preventDefault();
+        
+        const data = this.resizeData;
+        const deltaX = e.clientX - data.startX;
+        const deltaY = e.clientY - data.startY;
+        
+        let newWidth = data.startWidth;
+        let newHeight = data.startHeight;
+        
+        if (data.direction === 'width' || data.direction === 'both') {
+            newWidth = Math.max(50, data.startWidth + deltaX);
+        }
+        
+        if (data.direction === 'height' || data.direction === 'both') {
+            newHeight = Math.max(20, data.startHeight + deltaY);
+        }
+        
+        // リアルタイムでセルサイズを更新
+        if (data.direction === 'width' || data.direction === 'both') {
+            data.cell.style.width = newWidth + 'px';
+            data.cell.style.minWidth = newWidth + 'px';
+        }
+        
+        if (data.direction === 'height' || data.direction === 'both') {
+            data.cell.style.height = newHeight + 'px';
+            data.cell.style.minHeight = newHeight + 'px';
+        }
+        
+        // サイドバーの値も更新
+        if (data.direction === 'width' || data.direction === 'both') {
+            document.getElementById('cellWidth').value = Math.round(newWidth);
+        }
+        if (data.direction === 'height' || data.direction === 'both') {
+            document.getElementById('cellHeight').value = Math.round(newHeight);
+        }
+    }
+    
+    // マウスアップ（リサイズ終了）
+    onMouseUp(e) {
+        if (!this.isResizing || !this.resizeData) return;
+        
+        console.log('リサイズ終了');
+        
+        const data = this.resizeData;
+        const cellRect = data.cell.getBoundingClientRect();
+        
+        // セルサイズデータを保存
+        if (!this.cellSizes[data.cellId]) {
+            this.cellSizes[data.cellId] = {};
+        }
+        
+        if (data.direction === 'width' || data.direction === 'both') {
+            this.cellSizes[data.cellId].width = Math.round(cellRect.width);
+        }
+        
+        if (data.direction === 'height' || data.direction === 'both') {
+            this.cellSizes[data.cellId].height = Math.round(cellRect.height);
+        }
+        
+        console.log('保存されたセルサイズ:', this.cellSizes[data.cellId]);
+        
+        // 状態を保存
+        this.saveState();
+        
+        // リサイズ状態をリセット
+        this.isResizing = false;
+        this.resizeData = null;
+        document.body.classList.remove('resizing');
+    }
 }
 
 // グローバル変数
@@ -491,7 +645,129 @@ let editor;
 // ページ読み込み時の初期化
 document.addEventListener('DOMContentLoaded', function() {
     editor = new BlackboardTemplateEditor();
+    
+    // URLパラメータをチェックして編集モードかどうかを判定
+    const urlParams = new URLSearchParams(window.location.search);
+    const editTemplateId = urlParams.get('edit');
+    
+    if (editTemplateId) {
+        // 編集モード: 既存テンプレートを読み込み
+        loadExistingTemplate(parseInt(editTemplateId));
+    }
 });
+
+// 既存テンプレートを読み込み
+function loadExistingTemplate(templateId) {
+    console.log('既存テンプレートを読み込み中...', templateId);
+    
+    fetch(`/api/templates/${templateId}`)
+        .then(response => response.json())
+        .then(template => {
+            console.log('読み込んだテンプレートデータ:', template);
+            
+            // 基本情報を設定
+            document.getElementById('templateName').value = template.name;
+            document.getElementById('templateDescription').value = template.description || '';
+            document.getElementById('templateWidth').value = template.default_width;
+            document.getElementById('templateHeight').value = template.default_height;
+            
+            // レイアウト設定があれば読み込み
+            if (template.layout_config) {
+                try {
+                    const layoutConfig = JSON.parse(template.layout_config);
+                    editor.rows = layoutConfig.max_row || 8;
+                    editor.cols = layoutConfig.max_col || 6;
+                } catch (e) {
+                    console.warn('レイアウト設定の解析に失敗:', e);
+                }
+            }
+            
+            // セルデータを読み込み
+            if (template.cell_data) {
+                try {
+                    const cellData = JSON.parse(template.cell_data);
+                    // Excel形式のセルアドレス（A1, B2など）を内部形式（0-0, 1-1など）に変換
+                    for (const [excelAddress, text] of Object.entries(cellData)) {
+                        const cellCoords = excelAddressToCellId(excelAddress);
+                        if (cellCoords) {
+                            editor.cellData[cellCoords] = { text: text };
+                        }
+                    }
+                } catch (e) {
+                    console.warn('セルデータの解析に失敗:', e);
+                }
+            }
+            
+            // セルタイプとセル設定を読み込み
+            if (template.layout_config) {
+                try {
+                    const layoutConfig = JSON.parse(template.layout_config);
+                    if (layoutConfig.cell_types) {
+                        editor.cellTypes = layoutConfig.cell_types;
+                    }
+                    if (layoutConfig.cell_configs) {
+                        editor.cellConfigs = layoutConfig.cell_configs;
+                    }
+                } catch (e) {
+                    console.warn('セル設定の解析に失敗:', e);
+                }
+            }
+            
+            // セルサイズを読み込み
+            if (template.layout_config) {
+                try {
+                    const layoutConfig = JSON.parse(template.layout_config);
+                    if (layoutConfig.cell_sizes) {
+                        editor.cellSizes = layoutConfig.cell_sizes;
+                        console.log('セルサイズデータを読み込み:', editor.cellSizes);
+                    } else {
+                        console.log('レイアウト設定にセルサイズデータがありません');
+                    }
+                } catch (e) {
+                    console.warn('セルサイズの解析に失敗:', e);
+                }
+            }
+            
+            // 編集用のテンプレートIDを保存
+            editor.editingTemplateId = templateId;
+            
+            // グリッドを再作成
+            editor.createGrid();
+            
+            // ページタイトルを変更
+            document.querySelector('h1').innerHTML = '<i class="fas fa-edit"></i> テンプレート編集: ' + template.name;
+            
+            // 保存ボタンのテキストを変更
+            const saveButton = document.querySelector('button[onclick="saveTemplate()"]');
+            if (saveButton) {
+                saveButton.innerHTML = '<i class="fas fa-save"></i> 更新保存';
+            }
+            
+            console.log('テンプレート読み込み完了');
+        })
+        .catch(error => {
+            console.error('テンプレートの読み込みに失敗しました:', error);
+            alert('テンプレートの読み込みに失敗しました');
+        });
+}
+
+// Excelアドレス（A1, B2など）を内部のセルID（0-0, 1-1など）に変換
+function excelAddressToCellId(excelAddress) {
+    const match = excelAddress.match(/^([A-Z]+)(\d+)$/);
+    if (!match) return null;
+    
+    const colStr = match[1];
+    const rowNum = parseInt(match[2]) - 1; // 1-indexed to 0-indexed
+    
+    // 列文字をインデックスに変換
+    let colNum = 0;
+    for (let i = 0; i < colStr.length; i++) {
+        colNum = colNum * 26 + (colStr.charCodeAt(i) - 64);
+    }
+    colNum -= 1; // 1-indexed to 0-indexed
+    
+    return `${rowNum}-${colNum}`;
+}
 
 // フォーマット切り替え
 function toggleFormat(type) {
@@ -501,22 +777,57 @@ function toggleFormat(type) {
         const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
         if (!cell) return;
         
+        console.log(`🎨 フォーマット適用前 [${cellId}]:`, {
+            type: type,
+            cssText: cell.style.cssText,
+            className: cell.className
+        });
+        
         switch (type) {
             case 'bold':
-                cell.classList.toggle('text-bold');
+                if (cell.classList.contains('text-bold')) {
+                    cell.classList.remove('text-bold');
+                    cell.style.fontWeight = '';
+                } else {
+                    cell.classList.add('text-bold');
+                    cell.style.fontWeight = 'bold';
+                }
                 break;
             case 'italic':
-                cell.classList.toggle('text-italic');
+                if (cell.classList.contains('text-italic')) {
+                    cell.classList.remove('text-italic');
+                    cell.style.fontStyle = '';
+                } else {
+                    cell.classList.add('text-italic');
+                    cell.style.fontStyle = 'italic';
+                }
                 break;
             case 'center':
                 cell.classList.remove('text-right');
-                cell.classList.toggle('text-center');
+                if (cell.classList.contains('text-center')) {
+                    cell.classList.remove('text-center');
+                    cell.style.textAlign = '';
+                } else {
+                    cell.classList.add('text-center');
+                    cell.style.textAlign = 'center';
+                }
                 break;
             case 'right':
                 cell.classList.remove('text-center');
-                cell.classList.toggle('text-right');
+                if (cell.classList.contains('text-right')) {
+                    cell.classList.remove('text-right');
+                    cell.style.textAlign = '';
+                } else {
+                    cell.classList.add('text-right');
+                    cell.style.textAlign = 'right';
+                }
                 break;
         }
+        
+        console.log(`🎨 フォーマット適用後 [${cellId}]:`, {
+            cssText: cell.style.cssText,
+            className: cell.className
+        });
     });
     
     editor.saveState();
@@ -529,7 +840,9 @@ function setCellBackground(color) {
     editor.selectedCells.forEach(cellId => {
         const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
         if (cell) {
+            console.log(`🎨 背景色設定前 [${cellId}]:`, cell.style.cssText);
             cell.style.backgroundColor = color;
+            console.log(`🎨 背景色設定後 [${cellId}]:`, cell.style.cssText);
         }
     });
     
@@ -664,23 +977,47 @@ function saveTemplate() {
         cell_data: editor.cellData,
         cell_types: editor.cellTypes,
         cell_configs: editor.cellConfigs,
+        cell_sizes: editor.cellSizes,
         merged_cells: Array.from(editor.mergedCells.entries())
     };
     
     // セルのスタイル情報を収集
     const cellStyles = {};
+    console.log('🎨 スタイル収集開始...');
     document.querySelectorAll('.grid-cell').forEach(cell => {
         const cellId = cell.dataset.cellId;
+        console.log(`🎨 セル [${cellId}] 検査中:`, {
+            cssText: cell.style.cssText,
+            className: cell.className,
+            computedStyle: window.getComputedStyle(cell),
+            width: cell.style.width,
+            height: cell.style.height,
+            textAlign: cell.style.textAlign
+        });
+        
         if (cell.style.cssText || cell.className !== 'grid-cell') {
             cellStyles[cellId] = {
                 style: cell.style.cssText,
                 className: cell.className
             };
+            console.log(`🎨 セル [${cellId}] スタイル収集:`, cellStyles[cellId]);
         }
     });
     templateData.cell_styles = cellStyles;
+    console.log('🎨 最終的な cellStyles:', cellStyles);
     
-    // APIに送信
+    // 編集モードか新規作成モードかを判定
+    if (editor.editingTemplateId) {
+        // 編集モード: 既存テンプレートを更新
+        updateExistingTemplate(editor.editingTemplateId, templateData);
+    } else {
+        // 新規作成モード: 新しいテンプレートを作成
+        createNewTemplate(templateData);
+    }
+}
+
+// 新しいテンプレートを作成
+function createNewTemplate(templateData) {
     fetch('/api/templates/create-web', {
         method: 'POST',
         headers: {
@@ -700,6 +1037,81 @@ function saveTemplate() {
     .catch(error => {
         console.error('Error:', error);
         alert('保存中にエラーが発生しました');
+    });
+}
+
+// 既存テンプレートを更新
+function updateExistingTemplate(templateId, templateData) {
+    // 基本情報のみの更新データを作成
+    const updateData = {
+        name: templateData.name,
+        description: templateData.description,
+        default_width: templateData.default_width,
+        default_height: templateData.default_height
+    };
+    
+    // レイアウト設定を作成
+    const layoutConfig = {
+        max_row: templateData.rows,
+        max_col: templateData.cols,
+        cell_types: templateData.cell_types,
+        cell_configs: templateData.cell_configs,
+        cell_sizes: templateData.cell_sizes
+    };
+    
+    // Excel形式のセルデータに変換
+    const cellData = {};
+    for (const [cellId, data] of Object.entries(templateData.cell_data)) {
+        const [row, col] = cellId.split('-').map(Number);
+        const excelAddress = editor.numberToColumn(col + 1) + (row + 1);
+        cellData[excelAddress] = data.text || '';
+    }
+    
+    // セルスタイル情報をExcel形式に変換
+    const cellStyles = {};
+    for (const [cellId, style] of Object.entries(templateData.cell_styles)) {
+        const [row, col] = cellId.split('-').map(Number);
+        const excelAddress = editor.numberToColumn(col + 1) + (row + 1);
+        cellStyles[excelAddress] = style;
+    }
+    
+    // 更新APIを呼び出し（Web作成APIを使用）
+    const webTemplateData = {
+        ...templateData,
+        cell_data: Object.fromEntries(Object.entries(templateData.cell_data).map(([cellId, data]) => {
+            const [row, col] = cellId.split('-').map(Number);
+            return [cellId, data];
+        }))
+    };
+    
+    console.log('テンプレート更新データ:', webTemplateData);
+    console.log('セルサイズデータ:', webTemplateData.cell_sizes);
+    
+    fetch(`/api/templates/create-web`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(webTemplateData)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.id) {
+            // 既存のテンプレートを削除
+            return fetch(`/api/templates/${templateId}`, {
+                method: 'DELETE'
+            });
+        } else {
+            throw new Error('テンプレートの作成に失敗');
+        }
+    })
+    .then(() => {
+        alert('テンプレートが更新されました');
+        window.location.href = '/templates';
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('更新中にエラーが発生しました');
     });
 }
 
@@ -738,6 +1150,86 @@ function updateCellType() {
         
         editor.saveState();
     }
+}
+
+// セルサイズを更新
+function updateCellSize() {
+    if (!editor.selectedCells.size) return;
+    
+    const width = parseInt(document.getElementById('cellWidth').value);
+    const height = parseInt(document.getElementById('cellHeight').value);
+    
+    editor.selectedCells.forEach(cellId => {
+        // セルサイズデータを保存
+        if (!editor.cellSizes[cellId]) {
+            editor.cellSizes[cellId] = {};
+        }
+        editor.cellSizes[cellId].width = width;
+        editor.cellSizes[cellId].height = height;
+        
+        // セルに適用
+        const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
+        if (cell) {
+            cell.style.width = width + 'px';
+            cell.style.height = height + 'px';
+        }
+    });
+    
+    editor.saveState();
+}
+
+// セルサイズを自動調整
+function autoSizeCell() {
+    if (!editor.selectedCells.size) return;
+    
+    editor.selectedCells.forEach(cellId => {
+        const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
+        if (cell) {
+            const textLength = cell.textContent.length;
+            const autoWidth = Math.max(80, Math.min(textLength * 12 + 20, 300));
+            const autoHeight = 30;
+            
+            // セルサイズデータを保存
+            if (!editor.cellSizes[cellId]) {
+                editor.cellSizes[cellId] = {};
+            }
+            editor.cellSizes[cellId].width = autoWidth;
+            editor.cellSizes[cellId].height = autoHeight;
+            
+            // セルに適用
+            cell.style.width = autoWidth + 'px';
+            cell.style.height = autoHeight + 'px';
+            
+            // UIを更新
+            document.getElementById('cellWidth').value = autoWidth;
+            document.getElementById('cellHeight').value = autoHeight;
+        }
+    });
+    
+    editor.saveState();
+}
+
+// セルサイズをリセット
+function resetCellSize() {
+    if (!editor.selectedCells.size) return;
+    
+    editor.selectedCells.forEach(cellId => {
+        // セルサイズデータを削除
+        delete editor.cellSizes[cellId];
+        
+        // セルをデフォルトサイズに戻す
+        const cell = document.querySelector(`[data-cell-id="${cellId}"]`);
+        if (cell) {
+            cell.style.width = '';
+            cell.style.height = '';
+        }
+    });
+    
+    // UIを更新
+    document.getElementById('cellWidth').value = 80;
+    document.getElementById('cellHeight').value = 30;
+    
+    editor.saveState();
 }
 
 // プレビューを表示

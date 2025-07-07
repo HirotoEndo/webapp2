@@ -55,6 +55,39 @@
     </div>
 </div>
 
+<!-- プロジェクト編集モーダル -->
+<div class="modal fade" id="editProjectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">プロジェクト編集</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editProjectForm">
+                    <input type="hidden" id="editProjectId">
+                    <div class="mb-3">
+                        <label for="editProjectName" class="form-label">プロジェクト名</label>
+                        <input type="text" class="form-control" id="editProjectName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editProjectLocation" class="form-label">場所</label>
+                        <input type="text" class="form-control" id="editProjectLocation">
+                    </div>
+                    <div class="mb-3">
+                        <label for="editProjectDescription" class="form-label">説明</label>
+                        <textarea class="form-control" id="editProjectDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="button" class="btn btn-primary" onclick="updateProject()">更新</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -85,14 +118,33 @@ function createProjectCard(project) {
     col.innerHTML = `
         <div class="card">
             <div class="card-body">
-                <h5 class="card-title">${project.name}</h5>
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title mb-0">${project.name}</h5>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="/project/${project.id}">
+                                <i class="fas fa-eye"></i> 詳細表示
+                            </a></li>
+                            <li><button class="dropdown-item" onclick="editProject(${project.id}, '${project.name}', '${project.location || ''}', '${project.description || ''}')">
+                                <i class="fas fa-edit"></i> 編集
+                            </button></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><button class="dropdown-item text-danger" onclick="deleteProject(${project.id}, '${project.name}')">
+                                <i class="fas fa-trash"></i> 削除
+                            </button></li>
+                        </ul>
+                    </div>
+                </div>
                 <p class="card-text">
                     <small class="text-muted">
                         <i class="fas fa-map-marker-alt"></i> ${project.location || '場所未設定'}
                     </small>
                 </p>
                 <p class="card-text">${project.description || '説明なし'}</p>
-                <div class="d-flex justify-content-between">
+                <div class="d-flex justify-content-between align-items-center">
                     <a href="/project/${project.id}" class="btn btn-primary">
                         <i class="fas fa-eye"></i> 詳細
                     </a>
@@ -144,6 +196,86 @@ function createProject() {
     .catch(error => {
         console.error('プロジェクトの作成に失敗しました:', error);
         alert('プロジェクトの作成に失敗しました');
+    });
+}
+
+// プロジェクト削除
+function deleteProject(projectId, projectName) {
+    const message = `プロジェクト「${projectName}」を削除しますか？\n\n⚠️ 警告: この操作により以下のデータが完全に削除されます：\n• プロジェクト内のすべての写真\n• すべてのサブプロジェクト（エリア）\n• すべての黒板データ\n• 関連する画像ファイル\n\nこの操作は取り消すことができません。`;
+    
+    if (!confirm(message)) {
+        return;
+    }
+    
+    // 削除確認のためのプロジェクト名入力
+    const confirmName = prompt(`削除を実行するため、プロジェクト名「${projectName}」を入力してください:`);
+    if (confirmName !== projectName) {
+        alert('プロジェクト名が一致しません。削除を中止しました。');
+        return;
+    }
+    
+    fetch(`/api/projects/${projectId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(result => {
+        alert(`プロジェクト「${projectName}」を削除しました。\n削除された写真: ${result.deleted_photos}枚\n削除されたエリア: ${result.deleted_subprojects}個`);
+        loadProjects(); // プロジェクト一覧を再読み込み
+    })
+    .catch(error => {
+        console.error('プロジェクトの削除に失敗しました:', error);
+        alert('プロジェクトの削除に失敗しました');
+    });
+}
+
+// プロジェクト編集モーダルを開く
+function editProject(projectId, name, location, description) {
+    document.getElementById('editProjectId').value = projectId;
+    document.getElementById('editProjectName').value = name;
+    document.getElementById('editProjectLocation').value = location || '';
+    document.getElementById('editProjectDescription').value = description || '';
+    
+    const modal = new bootstrap.Modal(document.getElementById('editProjectModal'));
+    modal.show();
+}
+
+// プロジェクト更新
+function updateProject() {
+    const projectId = document.getElementById('editProjectId').value;
+    const name = document.getElementById('editProjectName').value;
+    const location = document.getElementById('editProjectLocation').value;
+    const description = document.getElementById('editProjectDescription').value;
+    
+    if (!name) {
+        alert('プロジェクト名を入力してください');
+        return;
+    }
+    
+    fetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            name: name,
+            location: location,
+            description: description
+        })
+    })
+    .then(response => response.json())
+    .then(project => {
+        // モーダルを閉じる
+        const modal = bootstrap.Modal.getInstance(document.getElementById('editProjectModal'));
+        modal.hide();
+        
+        alert('プロジェクトを更新しました');
+        
+        // プロジェクト一覧を再読み込み
+        loadProjects();
+    })
+    .catch(error => {
+        console.error('プロジェクトの更新に失敗しました:', error);
+        alert('プロジェクトの更新に失敗しました');
     });
 }
 

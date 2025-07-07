@@ -82,6 +82,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (subprojectId) {
                     document.getElementById('subprojectSelect').value = subprojectId;
                 }
+                // プロジェクト選択後に写真番号を更新
+                generatePhotoNumber();
             }).catch(error => {
                 console.error('DEBUG: loadSubprojects failed:', error);
             });
@@ -125,6 +127,12 @@ async function initCamera() {
     console.log('DEBUG: initCamera() called');
     
     try {
+        // 既存のストリームが有効で同じ設定なら再利用
+        if (currentStream && checkCameraStreamStatus()) {
+            console.log('DEBUG: Reusing existing camera stream');
+            return;
+        }
+        
         const constraints = {
             video: {
                 facingMode: currentCamera,
@@ -135,6 +143,7 @@ async function initCamera() {
         
         console.log('DEBUG: Camera constraints:', constraints);
         
+        // 既存ストリームを停止
         if (currentStream) {
             console.log('DEBUG: Stopping existing stream');
             currentStream.getTracks().forEach(track => {
@@ -155,18 +164,22 @@ async function initCamera() {
         console.log('DEBUG: Setting video srcObject');
         video.srcObject = currentStream;
         
-        // ビデオが再生開始されるまで待機
-        video.addEventListener('loadedmetadata', () => {
-            console.log('DEBUG: Video metadata loaded, dimensions:', video.videoWidth, 'x', video.videoHeight);
-        });
-        
-        video.addEventListener('playing', () => {
-            console.log('DEBUG: Video playing started');
-        });
-        
-        video.addEventListener('error', (e) => {
-            console.error('DEBUG: Video element error:', e);
-        });
+        // ビデオイベントリスナーは重複を避けるため一度だけ設定
+        if (!video.hasAttribute('data-listeners-added')) {
+            video.addEventListener('loadedmetadata', () => {
+                console.log('DEBUG: Video metadata loaded, dimensions:', video.videoWidth, 'x', video.videoHeight);
+            });
+            
+            video.addEventListener('playing', () => {
+                console.log('DEBUG: Video playing started');
+            });
+            
+            video.addEventListener('error', (e) => {
+                console.error('DEBUG: Video element error:', e);
+            });
+            
+            video.setAttribute('data-listeners-added', 'true');
+        }
         
         // 画質設定を適用
         applyImageFilters();
@@ -175,7 +188,17 @@ async function initCamera() {
         
     } catch (error) {
         console.error('DEBUG: カメラの初期化に失敗しました:', error);
-        alert('カメラの初期化に失敗しました。カメラの使用を許可してください。');
+        
+        // より詳細なエラーメッセージ
+        if (error.name === 'NotAllowedError') {
+            alert('カメラのアクセス許可が拒否されました。ブラウザの設定でカメラの使用を許可してください。');
+        } else if (error.name === 'NotFoundError') {
+            alert('カメラが見つかりません。カメラが接続されているか確認してください。');
+        } else if (error.name === 'NotReadableError') {
+            alert('カメラが他のアプリケーションで使用中です。');
+        } else {
+            alert('カメラの初期化に失敗しました。ページを更新してお試しください。');
+        }
     }
 }
 
@@ -382,18 +405,44 @@ function updateBlackboard() {
     document.getElementById('photoNumber').textContent = document.getElementById('photoNumberInput').value || '-';
 }
 
-// 写真番号自動採番
-function generatePhotoNumber() {
-    const now = new Date();
-    const dateStr = now.getFullYear().toString().slice(-2) + 
-                   (now.getMonth() + 1).toString().padStart(2, '0') + 
-                   now.getDate().toString().padStart(2, '0');
-    const timeStr = now.getHours().toString().padStart(2, '0') + 
-                   now.getMinutes().toString().padStart(2, '0');
-    
-    const photoNumber = `${dateStr}-${timeStr}`;
-    document.getElementById('photoNumberInput').value = photoNumber;
-    updateBlackboard();
+// 写真番号自動採番（連番）
+async function generatePhotoNumber() {
+    try {
+        // プロジェクトとサブプロジェクトのIDを取得
+        const projectId = document.getElementById('projectSelect').value;
+        const subprojectId = document.getElementById('subprojectSelect').value;
+        
+        if (!projectId) {
+            // プロジェクトが選択されていない場合は1から開始
+            document.getElementById('photoNumberInput').value = '1';
+            updateBlackboard();
+            return;
+        }
+        
+        // 既存の写真数を取得してAPIで確認
+        let apiUrl = `/api/photos/project/${projectId}`;
+        if (subprojectId) {
+            apiUrl = `/api/photos/subproject/${subprojectId}`;
+        }
+        
+        const response = await fetch(apiUrl);
+        if (response.ok) {
+            const photos = await response.json();
+            const nextNumber = photos.length + 1;
+            document.getElementById('photoNumberInput').value = nextNumber.toString();
+        } else {
+            // APIエラーの場合は1から開始
+            document.getElementById('photoNumberInput').value = '1';
+        }
+        
+        updateBlackboard();
+        
+    } catch (error) {
+        console.error('写真番号生成エラー:', error);
+        // エラーの場合は1から開始
+        document.getElementById('photoNumberInput').value = '1';
+        updateBlackboard();
+    }
 }
 
 // 写真撮影
@@ -718,45 +767,32 @@ async function retakePhoto() {
 
 // カメラストリームの状態を詳細にチェック
 function checkCameraStreamStatus() {
-    console.log('DEBUG: checkCameraStreamStatus() called');
+    // ログ出力を最小限に抑制（テンプレートデバッグ優先）
     
     const video = document.getElementById('cameraVideo');
     
     // 基本的なチェック
     if (!video) {
-        console.log('DEBUG: Video element not found');
         return false;
     }
     
     if (!video.srcObject) {
-        console.log('DEBUG: Video srcObject is null');
         return false;
     }
     
     if (!currentStream) {
-        console.log('DEBUG: currentStream is null');
         return false;
     }
     
     // ストリームのトラック状態をチェック
     const tracks = currentStream.getTracks();
-    console.log('DEBUG: Stream tracks count:', tracks.length);
     
     let activeTrackCount = 0;
     tracks.forEach((track, index) => {
-        console.log(`DEBUG: Track ${index}: kind=${track.kind}, readyState=${track.readyState}, enabled=${track.enabled}`);
         if (track.readyState === 'live' && track.enabled) {
             activeTrackCount++;
         }
     });
-    
-    console.log('DEBUG: Active tracks count:', activeTrackCount);
-    
-    // ビデオ要素の状態をチェック
-    console.log('DEBUG: Video readyState:', video.readyState);
-    console.log('DEBUG: Video dimensions:', video.videoWidth, 'x', video.videoHeight);
-    console.log('DEBUG: Video paused:', video.paused);
-    console.log('DEBUG: Video ended:', video.ended);
     
     // ストリームが実際に動作しているかの判定
     const isStreamWorking = (
@@ -768,17 +804,9 @@ function checkCameraStreamStatus() {
         !video.paused // pausedもチェック
     );
     
-    console.log('DEBUG: Stream working status:', isStreamWorking);
-    
-    // 追加の詳細チェック
+    // エラー時のみログ出力
     if (!isStreamWorking) {
-        console.log('DEBUG: Stream not working reasons:');
-        console.log('  - activeTrackCount:', activeTrackCount > 0);
-        console.log('  - readyState >= 3:', video.readyState >= 3);
-        console.log('  - videoWidth > 0:', video.videoWidth > 0);
-        console.log('  - videoHeight > 0:', video.videoHeight > 0);
-        console.log('  - not ended:', !video.ended);
-        console.log('  - not paused:', !video.paused);
+        console.log('STREAM: カメラストリームに問題があります - 復旧を試行中...');
     }
     
     return isStreamWorking;
@@ -932,50 +960,45 @@ function setupIPadTouchPrevention() {
 let streamMonitorInterval = null;
 
 function startStreamMonitoring() {
-    console.log('DEBUG: Starting stream monitoring');
+    // ログ出力を最小限に抑制（テンプレートデバッグ優先）
     
     // 既存の監視を停止
     if (streamMonitorInterval) {
         clearInterval(streamMonitorInterval);
     }
     
-    // 3秒ごとにストリーム状態をチェック（頻度を上げて迅速に復旧）
+    // 5秒ごとにストリーム状態をチェック（頻度を下げてログを減らす）
     streamMonitorInterval = setInterval(() => {
         // 撮影結果表示中は監視を一時停止
         const captureResult = document.getElementById('captureResult');
         if (captureResult && captureResult.style.display !== 'none') {
-            return; // ログを減らすためコメントを削除
+            return;
         }
         
         const isStreamActive = checkCameraStreamStatus();
         if (!isStreamActive) {
-            console.log('DEBUG: Stream monitor detected inactive stream, attempting recovery...');
-            
             // まずビデオの再生を試す
             const video = document.getElementById('cameraVideo');
             if (currentStream && video && video.paused) {
-                console.log('DEBUG: Monitor attempting to resume paused video');
                 video.play().then(() => {
-                    console.log('DEBUG: Monitor successfully resumed video');
+                    console.log('STREAM: ビデオ再生を復旧しました');
                 }).catch(playError => {
-                    console.error('DEBUG: Monitor failed to resume video, reinitializing camera:', playError);
+                    console.log('STREAM: カメラを再初期化中...');
                     initCamera().catch(error => {
-                        console.error('DEBUG: Stream monitor recovery failed:', error);
+                        console.error('STREAM: 復旧に失敗:', error);
                     });
                 });
             } else {
                 // カメラを再初期化
-                console.log('DEBUG: Monitor reinitializing camera');
                 initCamera().catch(error => {
-                    console.error('DEBUG: Stream monitor recovery failed:', error);
+                    console.error('STREAM: 復旧に失敗:', error);
                 });
             }
         }
-    }, 3000);
+    }, 5000);
 }
 
 function stopStreamMonitoring() {
-    console.log('DEBUG: Stopping stream monitoring');
     if (streamMonitorInterval) {
         clearInterval(streamMonitorInterval);
         streamMonitorInterval = null;
@@ -1064,18 +1087,29 @@ async function loadTemplates() {
 async function applyTemplate() {
     const templateId = document.getElementById('templateSelect').value;
     
+    console.log('🔧 TEMPLATE: === applyTemplate 開始 ===');
+    console.log('🔧 TEMPLATE: 選択されたテンプレートID:', templateId);
+    
     if (!templateId) {
         // テンプレートがクリアされた場合、黒板を初期状態に戻す
+        console.log('🔧 TEMPLATE: テンプレートがクリアされたため、初期状態に戻します');
         resetBlackboardToDefault();
         return;
     }
     
     try {
+        console.log('🔧 TEMPLATE: テンプレートデータを取得中...');
         const response = await fetch(`/api/templates/${templateId}`);
         const template = await response.json();
         
+        console.log('🔧 TEMPLATE: 取得したテンプレートデータ:', template);
+        console.log('🔧 TEMPLATE: template.cell_data:', template.cell_data);
+        console.log('🔧 TEMPLATE: template.layout_config:', template.layout_config);
+        
         // テンプレートデータから黒板を更新
         updateBlackboardFromTemplate(template);
+        
+        console.log('🔧 TEMPLATE: === applyTemplate 完了 ===');
         
     } catch (error) {
         console.error('テンプレートの適用に失敗しました:', error);
@@ -1085,38 +1119,72 @@ async function applyTemplate() {
 
 // テンプレートから黒板を更新
 function updateBlackboardFromTemplate(template) {
+    console.log('🔧 TEMPLATE: === updateBlackboardFromTemplate 開始 ===');
+    console.log('🔧 TEMPLATE: template引数:', template);
+    
     try {
         // テンプレートデータがある場合は、テンプレートレイアウトを適用
         if (template.cell_data && template.layout_config) {
+            console.log('🔧 TEMPLATE: セルデータとレイアウト設定が存在します - フルテンプレートを適用');
+            console.log('🔧 TEMPLATE: cell_data内容:', template.cell_data);
+            console.log('🔧 TEMPLATE: layout_config内容:', template.layout_config);
+            
             generateBlackboardFromTemplate(template);
             // 入力フィールドも動的に生成
             generateDynamicInputFields(template);
         } else {
+            console.log('🔧 TEMPLATE: セルデータまたはレイアウト設定が不足 - 基本設定を適用');
+            console.log('🔧 TEMPLATE: cell_data存在:', !!template.cell_data);
+            console.log('🔧 TEMPLATE: layout_config存在:', !!template.layout_config);
             // フォールバック: 基本的な設定のみ適用
             applyBasicTemplateSettings(template);
         }
+        console.log('🔧 TEMPLATE: === updateBlackboardFromTemplate 完了 ===');
     } catch (error) {
         console.error('テンプレートの適用に失敗しました:', error);
+        console.error('ERROR スタックトレース:', error.stack);
         applyBasicTemplateSettings(template);
     }
 }
 
 // テンプレートから黒板レイアウトを生成
 function generateBlackboardFromTemplate(template) {
+    console.log('🔧 TEMPLATE: === generateBlackboardFromTemplate 開始 ===');
+    console.log('🔧 TEMPLATE: 受信したテンプレートオブジェクト全体:', template);
+    
     try {
+        console.log('🔧 TEMPLATE: JSONパース前のcell_data:', template.cell_data);
+        console.log('🔧 TEMPLATE: JSONパース前のlayout_config:', template.layout_config);
+        console.log('🔧 TEMPLATE: JSONパース前のcell_styles:', template.cell_styles);
+        
         const cellData = JSON.parse(template.cell_data || '{}');
         const layoutConfig = JSON.parse(template.layout_config || '{}');
         const cellTypes = layoutConfig.cell_types || {};
+        const cellSizes = layoutConfig.cell_sizes || {};
+        const cellStyles = template.cell_styles ? JSON.parse(template.cell_styles) : {};
+        
+        console.log('🔧 TEMPLATE: パース後のcellData:', cellData);
+        console.log('🔧 TEMPLATE: パース後のlayoutConfig:', layoutConfig);
+        console.log('🔧 TEMPLATE: cellTypes:', cellTypes);
+        console.log('🔧 TEMPLATE: cellSizes:', cellSizes);
+        console.log('🔧 TEMPLATE: cellStyles:', cellStyles);
         
         // 黒板テーブルを取得
         const blackboard = document.getElementById('blackboardOverlay');
         const blackboardTable = blackboard.querySelector('.blackboard-table');
         
+        console.log('🔧 TEMPLATE: 黒板要素取得:', {
+            blackboard: !!blackboard,
+            blackboardTable: !!blackboardTable
+        });
+        
         // 新しいテーブル構造を生成
         blackboardTable.innerHTML = '';
+        console.log('🔧 TEMPLATE: 既存テーブル内容をクリア完了');
         
         // セルデータをグリッド形式で整理
         const gridData = organizeGridData(cellData, layoutConfig);
+        console.log('🔧 TEMPLATE: グリッドデータ整理完了:', gridData);
         
         // テーブル行を生成
         gridData.forEach((rowData, rowIndex) => {
@@ -1126,17 +1194,92 @@ function generateBlackboardFromTemplate(template) {
                 const cellId = `${rowIndex}-${colIndex}`;
                 const cellType = cellTypes[cellId] || 'fixed';
                 
-                if (cellInfo.text) {
+                // セルにテキストがあるか、可変セルの場合は表示
+                if (cellInfo.text || cellType === 'variable') {
                     const cellElement = document.createElement(cellType === 'fixed' ? 'th' : 'td');
-                    cellElement.textContent = cellInfo.text;
-                    cellElement.dataset.cellId = cellId;
-                    cellElement.dataset.cellAddress = cellInfo.address;
                     
-                    // 可変セルの場合は特別なスタイルを適用
+                    // 可変セルの場合はデフォルトテキストを表示
                     if (cellType === 'variable') {
+                        cellElement.textContent = cellInfo.text || '-';
                         cellElement.style.backgroundColor = '#f0f8ff';
                         cellElement.style.border = '2px dashed #007bff';
+                        cellElement.style.minWidth = '80px';
+                        cellElement.style.textAlign = 'center';
+                        cellElement.style.fontWeight = 'bold';
+                        console.log(`🔧 TEMPLATE: 可変セル作成 [${cellId}] ${cellInfo.address}: "${cellInfo.text || '-'}"`);
+                    } else {
+                        cellElement.textContent = cellInfo.text;
+                        console.log(`🔧 TEMPLATE: 固定セル作成 [${cellId}] ${cellInfo.address}: "${cellInfo.text}"`);
                     }
+                    
+                    // セルサイズを適用
+                    if (cellSizes[cellId]) {
+                        const cellSize = cellSizes[cellId];
+                        if (cellSize.width) {
+                            cellElement.style.width = cellSize.width + 'px';
+                            cellElement.style.minWidth = cellSize.width + 'px';
+                            console.log(`🔧 TEMPLATE: セル幅を設定 [${cellId}]: ${cellSize.width}px`);
+                        }
+                        if (cellSize.height) {
+                            cellElement.style.height = cellSize.height + 'px';
+                            cellElement.style.minHeight = cellSize.height + 'px';
+                            console.log(`🔧 TEMPLATE: セル高さを設定 [${cellId}]: ${cellSize.height}px`);
+                        }
+                    }
+                    
+                    // セルスタイルを適用（内部ID形式とExcelアドレス形式の両方をチェック）
+                    const styleToApply = cellStyles[cellId] || cellStyles[cellInfo.address];
+                    if (styleToApply) {
+                        console.log(`🔧 TEMPLATE: セルスタイル適用開始 [${cellId}/${cellInfo.address}]:`, styleToApply);
+                        
+                        // CSSスタイルを直接適用
+                        if (styleToApply.style) {
+                            const styleDeclarations = styleToApply.style.split(';').filter(s => s.trim());
+                            styleDeclarations.forEach(declaration => {
+                                const [property, value] = declaration.split(':').map(s => s.trim());
+                                if (property && value) {
+                                    cellElement.style.setProperty(property, value);
+                                    console.log(`🔧 TEMPLATE: CSSプロパティ適用 [${cellId}]: ${property} = ${value}`);
+                                }
+                            });
+                        }
+                        
+                        // CSSクラスを適用
+                        if (styleToApply.className) {
+                            const classes = styleToApply.className.split(' ').filter(c => c.trim() && c !== 'grid-cell');
+                            classes.forEach(className => {
+                                cellElement.classList.add(className);
+                                console.log(`🔧 TEMPLATE: CSSクラス適用 [${cellId}]: ${className}`);
+                            });
+                        }
+                        
+                        // Excel形式のalignmentをCSSに変換
+                        if (styleToApply.alignment && styleToApply.alignment.horizontal) {
+                            cellElement.style.textAlign = styleToApply.alignment.horizontal;
+                            console.log(`🔧 TEMPLATE: text-align適用 [${cellId}]: ${styleToApply.alignment.horizontal}`);
+                        }
+                        
+                        // Excel形式のfontをCSSに変換
+                        if (styleToApply.font) {
+                            if (styleToApply.font.bold) {
+                                cellElement.style.fontWeight = 'bold';
+                                console.log(`🔧 TEMPLATE: fontWeight適用 [${cellId}]: bold`);
+                            }
+                            if (styleToApply.font.italic) {
+                                cellElement.style.fontStyle = 'italic';
+                                console.log(`🔧 TEMPLATE: fontStyle適用 [${cellId}]: italic`);
+                            }
+                        }
+                        
+                        // Excel形式のfillをCSSに変換
+                        if (styleToApply.fill && styleToApply.fill.color) {
+                            cellElement.style.backgroundColor = styleToApply.fill.color;
+                            console.log(`🔧 TEMPLATE: backgroundColor適用 [${cellId}]: ${styleToApply.fill.color}`);
+                        }
+                    }
+                    
+                    cellElement.dataset.cellId = cellId;
+                    cellElement.dataset.cellAddress = cellInfo.address;
                     
                     tr.appendChild(cellElement);
                 }
@@ -1157,67 +1300,109 @@ function generateBlackboardFromTemplate(template) {
 
 // セルデータをグリッド形式に整理
 function organizeGridData(cellData, layoutConfig) {
+    console.log('🔧 TEMPLATE: === organizeGridData 開始 ===');
+    console.log('🔧 TEMPLATE: cellData引数:', cellData);
+    console.log('🔧 TEMPLATE: layoutConfig引数:', layoutConfig);
+    
     const maxRow = layoutConfig.max_row || 8;
     const maxCol = layoutConfig.max_col || 6;
     const gridData = [];
+    
+    console.log('🔧 TEMPLATE: グリッドサイズ:', { maxRow, maxCol });
     
     // グリッドを初期化
     for (let row = 0; row < maxRow; row++) {
         gridData[row] = [];
         for (let col = 0; col < maxCol; col++) {
             const address = convertToExcelAddress(row, col);
+            const cellText = cellData[address] || '';
             gridData[row][col] = {
-                text: cellData[address] || '',
+                text: cellText,
                 address: address
             };
+            
+            if (cellText) {
+                console.log(`🔧 TEMPLATE: セルデータ発見 [${row},${col}] ${address} = "${cellText}"`);
+            }
         }
     }
     
+    console.log('🔧 TEMPLATE: 整理されたグリッドデータ:', gridData);
+    console.log('🔧 TEMPLATE: === organizeGridData 完了 ===');
     return gridData;
 }
 
 // テンプレートに基づいて動的に入力フィールドを生成
 function generateDynamicInputFields(template) {
+    console.log('🔧 TEMPLATE: === generateDynamicInputFields 開始 ===');
+    console.log('🔧 TEMPLATE: template引数:', template);
+    
     try {
+        console.log('🔧 TEMPLATE: JSONパース開始...');
         const cellData = JSON.parse(template.cell_data || '{}');
         const cellStyles = JSON.parse(template.cell_styles || '{}');
         const layoutConfig = JSON.parse(template.layout_config || '{}');
+        
+        console.log('🔧 TEMPLATE: パース結果:');
+        console.log('  - cellData:', cellData);
+        console.log('  - cellStyles:', cellStyles);
+        console.log('  - layoutConfig:', layoutConfig);
         
         // セルタイプとセル設定データを取得
         const cellTypes = layoutConfig.cell_types || {};
         const cellConfigs = layoutConfig.cell_configs || {};
         
+        console.log('🔧 TEMPLATE: セル設定:');
+        console.log('  - cellTypes:', cellTypes);
+        console.log('  - cellConfigs:', cellConfigs);
+        
         // 動的フィールドコンテナを取得
         const dynamicContainer = document.getElementById('dynamicEditFields');
         const defaultContainer = document.getElementById('defaultEditFields');
         
+        console.log('🔧 TEMPLATE: フィールドコンテナ:');
+        console.log('  - dynamicContainer:', !!dynamicContainer);
+        console.log('  - defaultContainer:', !!defaultContainer);
+        
         // 既存の動的フィールドを削除
         dynamicContainer.innerHTML = '';
+        console.log('🔧 TEMPLATE: 既存の動的フィールドをクリア完了');
         
         // 可変セルからフィールドを生成
+        console.log('🔧 TEMPLATE: 可変セルからフィールドを生成中...');
         const inputFields = generateFieldsFromTemplate(cellData, cellTypes, cellConfigs);
+        console.log('🔧 TEMPLATE: 生成されたフィールド:', inputFields);
         
         if (inputFields.length > 0) {
+            console.log('🔧 TEMPLATE: テンプレートの可変セルが見つかりました:', inputFields.length, '個');
             // テンプレートの可変セルがある場合
             defaultContainer.style.display = 'none';
             dynamicContainer.style.display = 'block';
             
+            console.log('🔧 TEMPLATE: デフォルトフィールドを非表示、動的フィールドを表示');
+            
             // 動的フィールドを生成
             inputFields.forEach((fieldInfo, index) => {
+                console.log(`🔧 TEMPLATE: フィールド生成中 [${index}]:`, fieldInfo);
                 const fieldGroup = createDynamicInputField(fieldInfo, index);
                 fieldGroup.classList.remove('dynamic-field'); // 元のクラスを削除
                 fieldGroup.classList.add('template-field'); // 新しいクラスを追加
                 dynamicContainer.appendChild(fieldGroup);
+                console.log(`🔧 TEMPLATE: フィールド ${index} を追加完了`);
             });
             
-            console.debug('テンプレート用動的フィールドを生成しました:', inputFields.length, '個');
+            console.log('🔧 TEMPLATE: テンプレート用動的フィールドを生成しました:', inputFields.length, '個');
         } else {
+            console.log('🔧 TEMPLATE: 可変セルが見つからないため、デフォルトフィールドを表示');
             // 可変セルがない場合はデフォルトフィールドを表示
             showDefaultEditFields();
         }
         
+        console.log('🔧 TEMPLATE: === generateDynamicInputFields 完了 ===');
+        
     } catch (error) {
-        console.error('動的入力フィールドの生成に失敗しました:', error);
+        console.error('🔧 TEMPLATE ERROR: 動的入力フィールドの生成に失敗しました:', error);
+        console.error('🔧 TEMPLATE ERROR: エラースタックトレース:', error.stack);
         showDefaultEditFields();
     }
 }
@@ -1236,27 +1421,48 @@ function showDefaultEditFields() {
 
 // テンプレートからフィールドを生成（新しいセルタイプシステム対応）
 function generateFieldsFromTemplate(cellData, cellTypes, cellConfigs) {
+    console.log('=== DEBUG: generateFieldsFromTemplate 開始 ===');
+    console.log('DEBUG: cellData:', cellData);
+    console.log('DEBUG: cellTypes:', cellTypes);
+    console.log('DEBUG: cellConfigs:', cellConfigs);
+    
     const inputFields = [];
+    
+    console.log('DEBUG: cellTypesのエントリー数:', Object.entries(cellTypes).length);
     
     // 可変セル（variable）のみからフィールドを生成
     Object.entries(cellTypes).forEach(([cellId, cellType]) => {
+        console.log(`DEBUG: セル処理中 - cellId: ${cellId}, cellType: ${cellType}`);
+        
         if (cellType === 'variable') {
+            console.log(`DEBUG: 可変セルを発見: ${cellId}`);
+            
             // セルIDから座標を取得 (例: "0-1" -> row=0, col=1)
             const [row, col] = cellId.split('-').map(Number);
             const excelAddress = convertToExcelAddress(row, col);
             
+            console.log(`DEBUG: 座標変換 - cellId: ${cellId} -> row: ${row}, col: ${col}, address: ${excelAddress}`);
+            
             // セルのテキスト内容を取得
             const cellText = cellData[excelAddress] || '';
+            console.log(`DEBUG: セルテキスト [${excelAddress}]: "${cellText}"`);
             
             // セル設定を取得
             const cellConfig = cellConfigs[cellId] || {};
             const dropdownOptions = cellConfig.options || [];
             const allowOther = cellConfig.allowOther !== false;
             
+            console.log(`DEBUG: セル設定 [${cellId}]:`, {
+                cellConfig,
+                dropdownOptions,
+                allowOther
+            });
+            
             // フィールド名を決定（セルのテキストまたは推測）
             const fieldName = cellText || guessFieldNameFromPosition(row, col, cellData);
+            console.log(`DEBUG: フィールド名決定: "${fieldName}"`);
             
-            inputFields.push({
+            const fieldInfo = {
                 cellId: cellId,
                 cellAddress: excelAddress,
                 fieldName: fieldName,
@@ -1266,9 +1472,18 @@ function generateFieldsFromTemplate(cellData, cellTypes, cellConfigs) {
                 allowOther: allowOther,
                 row: row,
                 col: col
-            });
+            };
+            
+            console.log(`DEBUG: フィールド情報生成完了 [${cellId}]:`, fieldInfo);
+            inputFields.push(fieldInfo);
+        } else {
+            console.log(`DEBUG: 固定セルをスキップ: ${cellId} (${cellType})`);
         }
     });
+    
+    console.log('DEBUG: 生成されたフィールド総数:', inputFields.length);
+    console.log('DEBUG: 生成されたフィールド一覧:', inputFields);
+    console.log('=== DEBUG: generateFieldsFromTemplate 完了 ===');
     
     return inputFields;
 }
@@ -1345,6 +1560,9 @@ function guessInputType(fieldName, currentValue) {
 
 // 動的入力フィールドを作成
 function createDynamicInputField(fieldInfo, index) {
+    console.log(`🔧 TEMPLATE: === createDynamicInputField 開始 [${index}] ===`);
+    console.log('🔧 TEMPLATE: fieldInfo:', fieldInfo);
+    
     const fieldGroup = document.createElement('div');
     fieldGroup.className = 'form-group dynamic-field';
     
@@ -1352,43 +1570,61 @@ function createDynamicInputField(fieldInfo, index) {
     label.textContent = fieldInfo.fieldName;
     fieldGroup.appendChild(label);
     
+    console.log(`🔧 TEMPLATE: ラベル作成完了: "${fieldInfo.fieldName}"`);
+    
     let inputElement;
     const fieldId = `dynamicField_${fieldInfo.cellId}`;
     
+    console.log(`🔧 TEMPLATE: フィールドID: ${fieldId}`);
+    console.log(`🔧 TEMPLATE: 入力タイプ: ${fieldInfo.inputType}`);
+    console.log(`🔧 TEMPLATE: ドロップダウンオプション数: ${fieldInfo.dropdownOptions.length}`);
+    
     if (fieldInfo.inputType === 'dropdown' && fieldInfo.dropdownOptions.length > 0) {
+        console.log('🔧 TEMPLATE: ドロップダウンフィールドを作成中...');
         // ドロップダウンフィールドを作成
         inputElement = document.createElement('select');
         inputElement.className = 'form-control';
         
         // 初期選択肢
         inputElement.innerHTML = '<option value="">選択してください</option>';
+        console.log('🔧 TEMPLATE: 初期オプション追加完了');
         
         // テンプレートで設定されたオプションを追加
-        fieldInfo.dropdownOptions.forEach(option => {
+        fieldInfo.dropdownOptions.forEach((option, optIndex) => {
+            console.log(`🔧 TEMPLATE: オプション追加中 [${optIndex}]: "${option}"`);
             const optionElement = document.createElement('option');
             optionElement.value = option;
             optionElement.textContent = option;
             inputElement.appendChild(optionElement);
         });
         
+        console.log('🔧 TEMPLATE: 全てのオプション追加完了');
+        
         // 「その他」オプションが許可されている場合
         if (fieldInfo.allowOther) {
+            console.log('🔧 TEMPLATE: "その他"オプションを追加中...');
             const otherOption = document.createElement('option');
             otherOption.value = '@@other@@';
             otherOption.textContent = 'その他（テキスト入力）';
             inputElement.appendChild(otherOption);
+            console.log('🔧 TEMPLATE: "その他"オプション追加完了');
         }
         
         // ドロップダウン変更時のイベント
         inputElement.addEventListener('change', function() {
+            console.log(`🔧 TEMPLATE: ドロップダウン変更イベント発生 - 選択値: "${this.value}"`);
             handleDropdownChange(this, fieldInfo);
         });
         
+        console.log('🔧 TEMPLATE: ドロップダウンフィールド作成完了');
+        
     } else {
+        console.log('🔧 TEMPLATE: テキスト入力フィールドを作成中...');
         // 通常のテキスト入力フィールド
         inputElement = document.createElement('input');
         inputElement.type = 'text';
         inputElement.className = 'form-control';
+        console.log('🔧 TEMPLATE: テキスト入力フィールド作成完了');
     }
     
     inputElement.id = fieldId;
@@ -1396,12 +1632,25 @@ function createDynamicInputField(fieldInfo, index) {
     inputElement.dataset.cellId = fieldInfo.cellId;
     inputElement.dataset.cellAddress = fieldInfo.cellAddress;
     
+    console.log(`🔧 TEMPLATE: フィールド属性設定完了:`);
+    console.log(`  - id: ${fieldId}`);
+    console.log(`  - placeholder: "${inputElement.placeholder}"`);
+    console.log(`  - cellId: ${fieldInfo.cellId}`);
+    console.log(`  - cellAddress: ${fieldInfo.cellAddress}`);
+    
     // 値が変更された時に黒板を更新
-    inputElement.addEventListener('change', updateDynamicBlackboard);
-    inputElement.addEventListener('input', updateDynamicBlackboard);
+    inputElement.addEventListener('change', function() {
+        console.log(`🔧 TEMPLATE: フィールド値変更イベント [${fieldInfo.cellId}]: "${this.value}"`);
+        updateDynamicBlackboard();
+    });
+    inputElement.addEventListener('input', function() {
+        console.log(`🔧 TEMPLATE: フィールド入力イベント [${fieldInfo.cellId}]: "${this.value}"`);
+        updateDynamicBlackboard();
+    });
     
     fieldGroup.appendChild(inputElement);
     
+    console.log(`🔧 TEMPLATE: === createDynamicInputField 完了 [${index}] ===`);
     return fieldGroup;
 }
 
@@ -1451,35 +1700,102 @@ function handleDropdownChange(selectElement, fieldInfo) {
 
 // 動的フィールドの変更を黒板に反映
 function updateDynamicBlackboard() {
+    console.log('🔧 TEMPLATE: === updateDynamicBlackboard 開始 ===');
+    
     // テンプレートフィールドと旧来の動的フィールドの両方をチェック
     const dynamicFields = document.querySelectorAll('.template-field input, .template-field select, .template-field textarea, .dynamic-field input, .dynamic-field select, .dynamic-field textarea');
     
-    dynamicFields.forEach(field => {
+    console.log(`🔧 TEMPLATE: 検出された動的フィールド数: ${dynamicFields.length}`);
+    
+    dynamicFields.forEach((field, index) => {
         const cellId = field.dataset.cellId;
         const cellAddress = field.dataset.cellAddress;
         const value = field.value;
         
+        console.log(`🔧 TEMPLATE: フィールド処理中 [${index}]:`);
+        console.log(`  - cellId: ${cellId}`);
+        console.log(`  - cellAddress: ${cellAddress}`);
+        console.log(`  - value: "${value}"`);
+        
         // 黒板の対応するセルを更新
         let blackboardCell = document.querySelector(`[data-cell-id="${cellId}"]`);
+        console.log(`🔧 TEMPLATE: data-cell-idでの検索結果:`, !!blackboardCell);
+        
         if (!blackboardCell) {
             // セルが見つからない場合、アドレスで検索
             blackboardCell = document.querySelector(`[data-cell="${cellAddress}"]`);
+            console.log(`🔧 TEMPLATE: data-cellでの検索結果:`, !!blackboardCell);
+        }
+        
+        if (!blackboardCell) {
+            // data-cell-address での検索も試す
+            blackboardCell = document.querySelector(`[data-cell-address="${cellAddress}"]`);
+            console.log(`🔧 TEMPLATE: data-cell-addressでの検索結果:`, !!blackboardCell);
         }
         
         if (blackboardCell) {
-            blackboardCell.textContent = value || '-';
+            const displayValue = value || '-';
+            console.log(`🔧 TEMPLATE: 黒板セル更新 [${cellId}]: "${displayValue}"`);
+            blackboardCell.textContent = displayValue;
+            
+            // 可変セルのスタイルを維持
+            if (blackboardCell.tagName === 'TD' && blackboardCell.style.backgroundColor === 'rgb(240, 248, 255)') {
+                blackboardCell.style.backgroundColor = '#f0f8ff';
+                blackboardCell.style.border = '2px dashed #007bff';
+                blackboardCell.style.fontWeight = 'bold';
+            }
         } else {
+            console.log(`🔧 TEMPLATE: 黒板セルが見つからない - 動的更新を試行`);
             // 動的に黒板のセルを作成または更新
             updateBlackboardCellDynamically(cellId, cellAddress, value);
         }
     });
+    
+    console.log('🔧 TEMPLATE: === updateDynamicBlackboard 完了 ===');
 }
 
 // 黒板のセルを動的に更新
 function updateBlackboardCellDynamically(cellId, cellAddress, value) {
-    // この関数は、テンプレートベースの黒板レイアウトでセルを更新する
-    // 実装は、実際の黒板レイアウト構造によって調整が必要
-    console.debug(`黒板セル更新: ${cellId} (${cellAddress}) = ${value}`);
+    console.log('🔧 TEMPLATE: === updateBlackboardCellDynamically 開始 ===');
+    console.log(`🔧 TEMPLATE: cellId: ${cellId}`);
+    console.log(`🔧 TEMPLATE: cellAddress: ${cellAddress}`);
+    console.log(`🔧 TEMPLATE: value: "${value}"`);
+    
+    // 黒板テーブル内の全セルをデバッグ出力
+    const blackboardTable = document.querySelector('.blackboard-table');
+    if (blackboardTable) {
+        const allCells = blackboardTable.querySelectorAll('th, td');
+        console.log(`🔧 TEMPLATE: 黒板内の全セル数: ${allCells.length}`);
+        
+        allCells.forEach((cell, index) => {
+            const attrs = {
+                'data-cell-id': cell.dataset.cellId,
+                'data-cell-address': cell.dataset.cellAddress,
+                'data-cell': cell.dataset.cell,
+                'id': cell.id,
+                'textContent': cell.textContent
+            };
+            console.log(`🔧 TEMPLATE: セル[${index}]:`, attrs);
+        });
+        
+        // セルIDやアドレスに基づいて該当セルを再検索
+        const targetCell = Array.from(allCells).find(cell => 
+            cell.dataset.cellId === cellId || 
+            cell.dataset.cellAddress === cellAddress ||
+            cell.dataset.cell === cellAddress
+        );
+        
+        if (targetCell) {
+            console.log(`🔧 TEMPLATE: 対象セルを発見し、更新実行`);
+            targetCell.textContent = value || '-';
+        } else {
+            console.log(`🔧 TEMPLATE: 対象セルが見つからない - セルの動的作成が必要`);
+        }
+    } else {
+        console.log(`🔧 TEMPLATE: 黒板テーブルが見つからない`);
+    }
+    
+    console.log('🔧 TEMPLATE: === updateBlackboardCellDynamically 完了 ===');
 }
 
 // 基本的なテンプレート設定を適用

@@ -24,6 +24,20 @@
                 <button class="btn btn-success" onclick="exportSubproject()">
                     <i class="fas fa-download"></i> エクスポート
                 </button>
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-cog"></i> 設定
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><button class="dropdown-item" onclick="editSubprojectDetails()">
+                            <i class="fas fa-edit"></i> エリア編集
+                        </button></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><button class="dropdown-item text-danger" onclick="deleteCurrentSubproject()">
+                            <i class="fas fa-trash"></i> エリア削除
+                        </button></li>
+                    </ul>
+                </div>
             </div>
         </div>
         
@@ -97,6 +111,129 @@
     </div>
 </div>
 
+<!-- サブプロジェクト編集モーダル -->
+<div class="modal fade" id="editSubprojectDetailsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">エリア編集</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editSubprojectDetailsForm">
+                    <div class="mb-3">
+                        <label for="subprojectDetailName" class="form-label">エリア名</label>
+                        <input type="text" class="form-control" id="subprojectDetailName" value="{{ subproject.name }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="subprojectDetailDescription" class="form-label">説明</label>
+                        <textarea class="form-control" id="subprojectDetailDescription" rows="3">{{ subproject.description or '' }}</textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="button" class="btn btn-primary" onclick="updateSubprojectDetails()">更新</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 黒板編集モーダル -->
+<div class="modal fade" id="editBlackboardModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">黒板データ編集</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editBlackboardForm">
+                    <input type="hidden" id="editBlackboardPhotoId">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editSurveyNumber" class="form-label">調査番号</label>
+                                <input type="text" class="form-control" id="editSurveyNumber">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editBuildingNumber" class="form-label">建物番号</label>
+                                <input type="text" class="form-control" id="editBuildingNumber">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editOwner" class="form-label">所有者</label>
+                                <input type="text" class="form-control" id="editOwner">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editDamageType" class="form-label">傷の種類</label>
+                                <select class="form-control" id="editDamageType">
+                                    <option value="">選択してください</option>
+                                    <option value="ひび割れ">ひび割れ</option>
+                                    <option value="剥離">剥離</option>
+                                    <option value="汚れ">汚れ</option>
+                                    <option value="欠け">欠け</option>
+                                    <option value="変色">変色</option>
+                                    <option value="その他">その他</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editDamageSize" class="form-label">寸法（縦×横cm）</label>
+                                <input type="text" class="form-control" id="editDamageSize" placeholder="例: 10×5">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editPhotoNumber" class="form-label">写真番号</label>
+                                <input type="text" class="form-control" id="editPhotoNumber">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editDamageLocation" class="form-label">損傷箇所</label>
+                        <input type="text" class="form-control" id="editDamageLocation">
+                    </div>
+                    <div class="mb-3">
+                        <label for="editDateTaken" class="form-label">撮影日</label>
+                        <input type="date" class="form-control" id="editDateTaken">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="button" class="btn btn-danger" onclick="deleteBlackboardData()" id="deleteBlackboardBtn">黒板データ削除</button>
+                <button type="button" class="btn btn-primary" onclick="saveBlackboardData()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 写真拡大モーダル -->
+<div class="modal fade" id="photoModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="photoModalTitle">写真詳細</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="photoModalImage" class="img-fluid" alt="写真">
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -143,21 +280,58 @@ function loadPhotos() {
 // 写真カードの作成
 function createPhotoCard(photo, index) {
     const col = document.createElement('div');
-    col.className = 'col-md-3 col-sm-6 mb-3';
+    col.className = 'col-md-6 col-lg-4 mb-3';
+    
+    // 黒板データの表示内容を作成
+    let blackboardContent = '';
+    if (photo.blackboard_data) {
+        const bd = photo.blackboard_data;
+        blackboardContent = `
+            <div class="mt-2">
+                <h6 class="text-primary mb-2"><i class="fas fa-chalkboard"></i> 黒板内容</h6>
+                <div class="row text-start">
+                    ${bd.survey_number ? `<div class="col-6"><small><strong>調査番号:</strong> ${bd.survey_number}</small></div>` : ''}
+                    ${bd.building_number ? `<div class="col-6"><small><strong>建物番号:</strong> ${bd.building_number}</small></div>` : ''}
+                    ${bd.owner ? `<div class="col-6"><small><strong>所有者:</strong> ${bd.owner}</small></div>` : ''}
+                    ${bd.damage_type ? `<div class="col-6"><small><strong>傷の種類:</strong> ${bd.damage_type}</small></div>` : ''}
+                    ${bd.damage_size ? `<div class="col-6"><small><strong>寸法:</strong> ${bd.damage_size}</small></div>` : ''}
+                    ${bd.damage_location ? `<div class="col-6"><small><strong>損傷箇所:</strong> ${bd.damage_location}</small></div>` : ''}
+                    ${bd.photo_number ? `<div class="col-6"><small><strong>写真番号:</strong> ${bd.photo_number}</small></div>` : ''}
+                </div>
+            </div>
+        `;
+    }
     
     col.innerHTML = `
         <div class="card h-100">
-            <div class="card-body text-center">
-                <i class="fas fa-image fa-3x text-primary mb-3"></i>
-                <h6 class="card-title">${photo.original_filename || photo.filename}</h6>
+            <div class="position-relative">
+                <img src="/uploads/${photo.filename}" class="card-img-top" alt="${photo.original_filename || photo.filename}" 
+                     style="height: 200px; object-fit: cover; cursor: pointer;" 
+                     onclick="showPhotoModal('${photo.filename}', '${photo.original_filename || photo.filename}')">
+                <div class="position-absolute top-0 end-0 p-2">
+                    <div class="btn-group-vertical">
+                        <button class="btn btn-sm btn-primary mb-1" onclick="editPhotoBlackboard(${photo.id})" title="黒板編集">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deletePhotoFromList(${photo.id})" title="削除">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <h6 class="card-title text-truncate">${photo.original_filename || photo.filename}</h6>
                 <p class="card-text">
                     <small class="text-muted">
                         ${new Date(photo.captured_at).toLocaleDateString()}
                     </small>
                 </p>
-                <button class="btn btn-sm btn-outline-primary" onclick="showPhotoDetail(${photo.id})">
-                    <i class="fas fa-eye"></i> 詳細
-                </button>
+                ${blackboardContent}
+                <div class="text-center mt-3">
+                    <button class="btn btn-sm btn-outline-primary" onclick="showPhotoDetail(${photo.id})">
+                        <i class="fas fa-eye"></i> 詳細
+                    </button>
+                </div>
             </div>
         </div>
     `;
@@ -177,11 +351,28 @@ function showPhotoDetail(photoId) {
             document.getElementById('photoDetailCaptured').textContent = new Date(photo.captured_at).toLocaleString();
             document.getElementById('photoDetailSize').textContent = photo.file_size ? `${(photo.file_size / 1024).toFixed(1)} KB` : '不明';
             
-            // 写真を表示（実際の実装では画像パスを使用）
-            document.getElementById('photoDetailImage').src = `/static/placeholder-image.jpg`;
+            // 写真を表示
+            document.getElementById('photoDetailImage').src = `/uploads/${photo.filename}`;
             
-            // 黒板情報を表示（TODO: 実装）
-            document.getElementById('blackboardInfo').innerHTML = '<p class="text-muted">黒板情報は実装予定です</p>';
+            // 黒板情報を表示
+            const blackboardInfo = document.getElementById('blackboardInfo');
+            if (photo.blackboard_data) {
+                const bd = photo.blackboard_data;
+                blackboardInfo.innerHTML = `
+                    <div class="row">
+                        ${bd.survey_number ? `<div class="col-6 mb-2"><strong>調査番号:</strong><br>${bd.survey_number}</div>` : ''}
+                        ${bd.building_number ? `<div class="col-6 mb-2"><strong>建物番号:</strong><br>${bd.building_number}</div>` : ''}
+                        ${bd.owner ? `<div class="col-6 mb-2"><strong>所有者:</strong><br>${bd.owner}</div>` : ''}
+                        ${bd.damage_type ? `<div class="col-6 mb-2"><strong>傷の種類:</strong><br>${bd.damage_type}</div>` : ''}
+                        ${bd.damage_size ? `<div class="col-6 mb-2"><strong>寸法:</strong><br>${bd.damage_size}</div>` : ''}
+                        ${bd.damage_location ? `<div class="col-6 mb-2"><strong>損傷箇所:</strong><br>${bd.damage_location}</div>` : ''}
+                        ${bd.photo_number ? `<div class="col-6 mb-2"><strong>写真番号:</strong><br>${bd.photo_number}</div>` : ''}
+                        ${bd.date_taken ? `<div class="col-6 mb-2"><strong>撮影日:</strong><br>${bd.date_taken}</div>` : ''}
+                    </div>
+                `;
+            } else {
+                blackboardInfo.innerHTML = '<p class="text-muted">黒板情報なし</p>';
+            }
             
             // モーダルを表示
             const modal = new bootstrap.Modal(document.getElementById('photoDetailModal'));
@@ -221,6 +412,213 @@ function deletePhoto() {
 // サブプロジェクトのエクスポート
 function exportSubproject() {
     window.open(`/api/export/project/${projectId}?subproject_id=${subprojectId}`, '_blank');
+}
+
+// 写真モーダル表示
+function showPhotoModal(filename, originalFilename) {
+    document.getElementById('photoModalTitle').textContent = originalFilename;
+    document.getElementById('photoModalImage').src = `/uploads/${filename}`;
+    const modal = new bootstrap.Modal(document.getElementById('photoModal'));
+    modal.show();
+}
+
+// リストからの写真削除
+function deletePhotoFromList(photoId) {
+    if (!confirm('この写真を削除しますか？この操作は取り消せません。')) {
+        return;
+    }
+    
+    fetch(`/api/photos/${photoId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(result => {
+        alert('写真を削除しました');
+        loadPhotos(); // 写真一覧を再読み込み
+    })
+    .catch(error => {
+        console.error('写真の削除に失敗しました:', error);
+        alert('写真の削除に失敗しました');
+    });
+}
+
+// サブプロジェクト編集モーダルを開く
+function editSubprojectDetails() {
+    const modal = new bootstrap.Modal(document.getElementById('editSubprojectDetailsModal'));
+    modal.show();
+}
+
+// サブプロジェクト詳細を更新
+function updateSubprojectDetails() {
+    const name = document.getElementById('subprojectDetailName').value;
+    const description = document.getElementById('subprojectDetailDescription').value;
+    
+    if (!name) {
+        alert('エリア名を入力してください');
+        return;
+    }
+    
+    fetch(`/api/subprojects/${subprojectId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            name: name,
+            description: description,
+            project_id: projectId
+        })
+    })
+    .then(response => response.json())
+    .then(subproject => {
+        // モーダルを閉じる
+        const modal = bootstrap.Modal.getInstance(document.getElementById('editSubprojectDetailsModal'));
+        modal.hide();
+        
+        alert('エリアを更新しました');
+        
+        // ページをリロード
+        location.reload();
+    })
+    .catch(error => {
+        console.error('エリアの更新に失敗しました:', error);
+        alert('エリアの更新に失敗しました');
+    });
+}
+
+// 現在のサブプロジェクト削除
+function deleteCurrentSubproject() {
+    const subprojectName = '{{ subproject.name }}';
+    const message = `エリア「${subprojectName}」を削除しますか？\n\n⚠️ 警告: このエリアに関連する写真も全て削除されます。\nこの操作は取り消すことができません。`;
+    
+    if (!confirm(message)) {
+        return;
+    }
+    
+    fetch(`/api/subprojects/${subprojectId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(result => {
+        alert(`エリア「${subprojectName}」を削除しました`);
+        window.location.href = `/project/${projectId}`; // プロジェクト詳細ページに戻る
+    })
+    .catch(error => {
+        console.error('エリアの削除に失敗しました:', error);
+        alert('エリアの削除に失敗しました');
+    });
+}
+
+// 黒板編集モーダルを開く（プロジェクト詳細ページと同じ関数）
+function editPhotoBlackboard(photoId) {
+    document.getElementById('editBlackboardPhotoId').value = photoId;
+    
+    // 既存の黒板データを取得
+    fetch(`/api/blackboard/photo/${photoId}`)
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            } else if (response.status === 404) {
+                // 黒板データが存在しない場合、空のフォーム
+                return null;
+            } else {
+                throw new Error('黒板データの取得に失敗しました');
+            }
+        })
+        .then(blackboard => {
+            // フォームに値を設定
+            if (blackboard) {
+                document.getElementById('editSurveyNumber').value = blackboard.survey_number || '';
+                document.getElementById('editBuildingNumber').value = blackboard.building_number || '';
+                document.getElementById('editOwner').value = blackboard.owner || '';
+                document.getElementById('editDamageType').value = blackboard.damage_type || '';
+                document.getElementById('editDamageSize').value = blackboard.damage_size || '';
+                document.getElementById('editDamageLocation').value = blackboard.damage_location || '';
+                document.getElementById('editPhotoNumber').value = blackboard.photo_number || '';
+                document.getElementById('editDateTaken').value = blackboard.date_taken || '';
+                document.getElementById('deleteBlackboardBtn').style.display = 'inline-block';
+            } else {
+                // 新規作成の場合はフォームをクリア
+                document.getElementById('editBlackboardForm').reset();
+                document.getElementById('editBlackboardPhotoId').value = photoId;
+                document.getElementById('deleteBlackboardBtn').style.display = 'none';
+            }
+            
+            // モーダルを表示
+            const modal = new bootstrap.Modal(document.getElementById('editBlackboardModal'));
+            modal.show();
+        })
+        .catch(error => {
+            console.error('黒板データの取得に失敗しました:', error);
+            alert('黒板データの取得に失敗しました');
+        });
+}
+
+// 黒板データを保存
+function saveBlackboardData() {
+    const photoId = document.getElementById('editBlackboardPhotoId').value;
+    
+    const blackboardData = {
+        survey_number: document.getElementById('editSurveyNumber').value,
+        building_number: document.getElementById('editBuildingNumber').value,
+        owner: document.getElementById('editOwner').value,
+        damage_type: document.getElementById('editDamageType').value,
+        damage_size: document.getElementById('editDamageSize').value,
+        damage_location: document.getElementById('editDamageLocation').value,
+        photo_number: document.getElementById('editPhotoNumber').value,
+        date_taken: document.getElementById('editDateTaken').value
+    };
+    
+    fetch(`/api/blackboard/photo/${photoId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(blackboardData)
+    })
+    .then(response => response.json())
+    .then(result => {
+        // モーダルを閉じる
+        const modal = bootstrap.Modal.getInstance(document.getElementById('editBlackboardModal'));
+        modal.hide();
+        
+        alert('黒板データを保存しました');
+        
+        // 写真一覧を再読み込み
+        loadPhotos();
+    })
+    .catch(error => {
+        console.error('黒板データの保存に失敗しました:', error);
+        alert('黒板データの保存に失敗しました');
+    });
+}
+
+// 黒板データを削除
+function deleteBlackboardData() {
+    const photoId = document.getElementById('editBlackboardPhotoId').value;
+    
+    if (!confirm('この写真の黒板データを削除しますか？')) {
+        return;
+    }
+    
+    fetch(`/api/blackboard/photo/${photoId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(result => {
+        // モーダルを閉じる
+        const modal = bootstrap.Modal.getInstance(document.getElementById('editBlackboardModal'));
+        modal.hide();
+        
+        alert('黒板データを削除しました');
+        
+        // 写真一覧を再読み込み
+        loadPhotos();
+    })
+    .catch(error => {
+        console.error('黒板データの削除に失敗しました:', error);
+        alert('黒板データの削除に失敗しました');
+    });
 }
 
 // ページ読み込み時の処理
