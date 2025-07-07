@@ -7,19 +7,60 @@ let gridVisible = false;
 let timerActive = false;
 let currentResolution = { width: 1920, height: 1080 };
 
+// Promise rejection の詳細デバッグ
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('DEBUG: UNHANDLED PROMISE REJECTION DETECTED!');
+    console.error('DEBUG: Promise:', event.promise);
+    console.error('DEBUG: Reason:', event.reason);
+    console.error('DEBUG: Stack trace:', event.reason ? event.reason.stack : 'No stack trace');
+    console.error('DEBUG: Event object:', event);
+});
+
+// Error イベントもキャッチ
+window.addEventListener('error', function(event) {
+    console.error('DEBUG: GLOBAL ERROR DETECTED!');
+    console.error('DEBUG: Message:', event.message);
+    console.error('DEBUG: Filename:', event.filename);
+    console.error('DEBUG: Line:', event.lineno);
+    console.error('DEBUG: Column:', event.colno);
+    console.error('DEBUG: Error object:', event.error);
+});
+
 // ページ読み込み時の初期化
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('DEBUG: DOMContentLoaded - Camera page initialization started');
+    
     // ナビゲーションを隠す
-    document.querySelector('.navbar').classList.add('hide-nav');
-    document.querySelector('main').style.margin = '0';
-    document.querySelector('main').style.padding = '0';
+    const navbar = document.querySelector('.navbar');
+    const main = document.querySelector('main');
+    
+    if (navbar) {
+        navbar.classList.add('hide-nav');
+        console.log('DEBUG: Navbar hidden');
+    } else {
+        console.log('DEBUG: Navbar not found');
+    }
+    
+    if (main) {
+        main.style.margin = '0';
+        main.style.padding = '0';
+        console.log('DEBUG: Main element styles updated');
+    } else {
+        console.log('DEBUG: Main element not found');
+    }
     
     // カメラの初期化
-    initCamera();
+    console.log('DEBUG: Starting camera initialization');
+    initCamera().catch(error => {
+        console.error('DEBUG: Camera initialization failed in DOMContentLoaded:', error);
+    });
     
     // データの読み込み
-    loadProjects();
+    loadProjects().catch(error => {
+        console.error('DEBUG: loadProjects failed:', error);
+    });
     loadTemplates().then(() => {
+        console.log('DEBUG: loadTemplates completed successfully');
         // URLパラメータからテンプレートIDを取得
         const urlParams = new URLSearchParams(window.location.search);
         const templateId = urlParams.get('template');
@@ -29,7 +70,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // テンプレートIDがある場合は自動適用
         if (templateId) {
             document.getElementById('templateSelect').value = templateId;
-            applyTemplate();
+            applyTemplate().catch(error => {
+                console.error('DEBUG: applyTemplate failed:', error);
+            });
         }
         
         // プロジェクトIDがある場合は自動選択
@@ -39,22 +82,48 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (subprojectId) {
                     document.getElementById('subprojectSelect').value = subprojectId;
                 }
+            }).catch(error => {
+                console.error('DEBUG: loadSubprojects failed:', error);
             });
         }
+    }).catch(error => {
+        console.error('DEBUG: loadTemplates failed:', error);
     });
     
     // 黒板のドラッグ機能の設定
     setupBlackboardDrag();
+    
+    // iPad対応の追加設定
+    setupIPadTouchPrevention();
+    
+    // ストリーム監視を開始
+    startStreamMonitoring();
     
     // 撮影日を設定
     document.getElementById('dateTaken').textContent = new Date().toLocaleDateString('ja-JP');
     
     // 写真番号の自動採番
     generatePhotoNumber();
+    
+    // 終了ボタンのイベントリスナーを追加
+    const exitButton = document.getElementById('exitButton');
+    if (exitButton) {
+        console.log('DEBUG: Adding event listener to exit button');
+        exitButton.addEventListener('click', function(event) {
+            console.log('DEBUG: Exit button clicked via addEventListener');
+            event.preventDefault();
+            event.stopPropagation();
+            exitFullscreen();
+        });
+    } else {
+        console.log('DEBUG: Exit button not found');
+    }
 });
 
 // カメラの初期化
 async function initCamera() {
+    console.log('DEBUG: initCamera() called');
+    
     try {
         const constraints = {
             video: {
@@ -64,19 +133,48 @@ async function initCamera() {
             }
         };
         
+        console.log('DEBUG: Camera constraints:', constraints);
+        
         if (currentStream) {
-            currentStream.getTracks().forEach(track => track.stop());
+            console.log('DEBUG: Stopping existing stream');
+            currentStream.getTracks().forEach(track => {
+                console.log('DEBUG: Stopping existing track:', track.kind, track.readyState);
+                track.stop();
+            });
         }
         
+        console.log('DEBUG: Requesting new media stream');
         currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        console.log('DEBUG: Media stream obtained, tracks:', currentStream.getTracks().length);
+        currentStream.getTracks().forEach((track, index) => {
+            console.log(`DEBUG: New track ${index}: kind=${track.kind}, readyState=${track.readyState}, enabled=${track.enabled}`);
+        });
+        
         const video = document.getElementById('cameraVideo');
+        console.log('DEBUG: Setting video srcObject');
         video.srcObject = currentStream;
+        
+        // ビデオが再生開始されるまで待機
+        video.addEventListener('loadedmetadata', () => {
+            console.log('DEBUG: Video metadata loaded, dimensions:', video.videoWidth, 'x', video.videoHeight);
+        });
+        
+        video.addEventListener('playing', () => {
+            console.log('DEBUG: Video playing started');
+        });
+        
+        video.addEventListener('error', (e) => {
+            console.error('DEBUG: Video element error:', e);
+        });
         
         // 画質設定を適用
         applyImageFilters();
         
+        console.log('DEBUG: Camera initialization completed');
+        
     } catch (error) {
-        console.error('カメラの初期化に失敗しました:', error);
+        console.error('DEBUG: カメラの初期化に失敗しました:', error);
         alert('カメラの初期化に失敗しました。カメラの使用を許可してください。');
     }
 }
@@ -155,39 +253,61 @@ function toggleFlash() {
 
 // 終了処理
 function exitFullscreen() {
+    console.log('DEBUG: ========== exitFullscreen() START ==========');
+    
     try {
-        // カメラストリームを停止
+        // 最もシンプルなアプローチ：即座にナビゲーション
+        console.log('DEBUG: Simple navigation approach');
+        
+        // クリーンアップは最小限に
         if (currentStream) {
-            currentStream.getTracks().forEach(track => {
-                track.stop();
-            });
-            currentStream = null;
+            console.log('DEBUG: Quick stream cleanup');
+            try {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+                console.log('DEBUG: Stream cleanup completed');
+            } catch (e) {
+                console.log('DEBUG: Stream cleanup error (ignored):', e);
+            }
         }
         
-        // ナビゲーションを復元
-        const navbar = document.querySelector('.navbar');
-        if (navbar) {
-            navbar.classList.remove('hide-nav');
+        // UI復元も最小限に
+        try {
+            const navbar = document.querySelector('.navbar');
+            if (navbar) {
+                navbar.classList.remove('hide-nav');
+                console.log('DEBUG: Navbar restored');
+            }
+            
+            const main = document.querySelector('main');
+            if (main) {
+                main.style.margin = '';
+                main.style.padding = '';
+                console.log('DEBUG: Main styles restored');
+            }
+        } catch (e) {
+            console.log('DEBUG: UI cleanup error (ignored):', e);
         }
         
-        const main = document.querySelector('main');
-        if (main) {
-            main.style.margin = '';
-            main.style.padding = '';
-        }
+        // 即座にナビゲーション（エラーを無視）
+        console.log('DEBUG: Starting navigation');
         
-        // 前のページに戻る
         if (window.history.length > 1) {
+            console.log('DEBUG: Using history.back()');
             window.history.back();
         } else {
+            console.log('DEBUG: Using location.href');
             window.location.href = '/';
         }
         
     } catch (error) {
-        console.error('終了処理でエラー:', error);
-        // エラーが発生してもホームに戻る
+        console.error('DEBUG: Error in exitFullscreen:', error);
+        // フォールバック
+        console.log('DEBUG: Fallback navigation');
         window.location.href = '/';
     }
+    
+    console.log('DEBUG: ========== exitFullscreen() END ==========');
 }
 
 // 黒板表示切替
@@ -278,28 +398,99 @@ function generatePhotoNumber() {
 
 // 写真撮影
 function capturePhoto() {
+    console.log('DEBUG: capturePhoto() called');
+    
     const video = document.getElementById('cameraVideo');
+    console.log('DEBUG: Video element found:', !!video);
+    
+    if (!video) {
+        console.error('DEBUG: Video element not found');
+        return;
+    }
+    
+    console.log('DEBUG: Video state - readyState:', video.readyState, 'videoWidth:', video.videoWidth, 'videoHeight:', video.videoHeight);
+    console.log('DEBUG: Current stream state:', currentStream ? 'active' : 'null');
+    
+    if (currentStream) {
+        const tracks = currentStream.getTracks();
+        console.log('DEBUG: Stream tracks count:', tracks.length);
+        tracks.forEach((track, index) => {
+            console.log(`DEBUG: Track ${index}: kind=${track.kind}, readyState=${track.readyState}, enabled=${track.enabled}`);
+        });
+    }
+    
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+        console.error('DEBUG: Video dimensions are zero - cannot capture');
+        alert('カメラの映像が正常に表示されていません。もう一度お試しください。');
+        return;
+    }
+    
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
+    console.log('DEBUG: Canvas dimensions set to:', canvas.width, 'x', canvas.height);
     
-    // ビデオフレームを描画
-    ctx.drawImage(video, 0, 0);
-    
-    // 黒板が表示されている場合、オーバーレイを合成
-    if (blackboardVisible) {
-        drawBlackboardOnCanvas(ctx, canvas.width, canvas.height);
+    try {
+        // ビデオフレームを描画
+        ctx.drawImage(video, 0, 0);
+        console.log('DEBUG: Video frame drawn to canvas');
+        
+        // 黒板が表示されている場合、オーバーレイを合成
+        if (blackboardVisible) {
+            console.log('DEBUG: Drawing blackboard overlay');
+            drawBlackboardOnCanvas(ctx, canvas.width, canvas.height);
+        }
+        
+        // 結果を表示
+        capturedImageData = canvas.toDataURL('image/jpeg', 0.9);
+        console.log('DEBUG: Image data captured, size:', capturedImageData.length, 'bytes');
+        
+        document.getElementById('capturedImage').src = capturedImageData;
+        document.getElementById('captureResult').style.display = 'flex';
+        console.log('DEBUG: Capture result displayed');
+        
+        // 撮影音効果（オプション）
+        playShutterSound();
+        
+        // ストリームの状態を再確認して必要に応じて復旧
+        setTimeout(async () => {
+            console.log('DEBUG: Post-capture stream check');
+            const isStreamActive = checkCameraStreamStatus();
+            
+            if (!isStreamActive) {
+                console.log('DEBUG: Stream stopped after capture, attempting recovery...');
+                
+                // まずビデオの再生を試す
+                const video = document.getElementById('cameraVideo');
+                if (currentStream && video && video.paused) {
+                    console.log('DEBUG: Post-capture attempting to resume paused video');
+                    try {
+                        await video.play();
+                        console.log('DEBUG: Post-capture video resumed successfully');
+                        return;
+                    } catch (playError) {
+                        console.error('DEBUG: Post-capture failed to resume video:', playError);
+                    }
+                }
+                
+                // ビデオ再生が失敗した場合、カメラを再初期化
+                try {
+                    await initCamera();
+                    console.log('DEBUG: Post-capture stream recovery successful');
+                } catch (error) {
+                    console.error('DEBUG: Post-capture stream recovery failed:', error);
+                }
+            } else {
+                console.log('DEBUG: Stream is still working after capture');
+            }
+        }, 500);
+        
+    } catch (error) {
+        console.error('DEBUG: Error during photo capture:', error);
+        alert('写真の撮影中にエラーが発生しました: ' + error.message);
     }
-    
-    // 結果を表示
-    capturedImageData = canvas.toDataURL('image/jpeg', 0.9);
-    document.getElementById('capturedImage').src = capturedImageData;
-    document.getElementById('captureResult').style.display = 'flex';
-    
-    // 撮影音効果（オプション）
-    playShutterSound();
 }
 
 // 黒板をcanvasに描画
@@ -390,6 +581,13 @@ async function savePhoto() {
     }
     
     try {
+        // 保存ボタンを無効化
+        const saveButton = document.querySelector('button[onclick="savePhoto()"]');
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
+        }
+        
         // Base64データをBlobに変換
         const response = await fetch(capturedImageData);
         const blob = await response.blob();
@@ -402,18 +600,11 @@ async function savePhoto() {
             formData.append('subproject_id', subprojectId);
         }
         
-        // 黒板データも送信
-        const blackboardData = {
-            survey_number: document.getElementById('surveyNumberInput').value || '',
-            building_number: document.getElementById('buildingNumberInput').value || '',
-            owner: document.getElementById('ownerInput').value || '',
-            damage_type: document.getElementById('damageTypeInput').value || '',
-            damage_size: document.getElementById('damageSizeInput').value || '',
-            damage_location: document.getElementById('damageLocationInput').value || '',
-            photo_number: document.getElementById('photoNumberInput').value || ''
-        };
-        
-        formData.append('blackboard_data', JSON.stringify(blackboardData));
+        // 黒板データも送信（デフォルトフィールドまたは動的フィールドから）
+        const blackboardData = getBlackboardData();
+        if (blackboardData) {
+            formData.append('blackboard_data', JSON.stringify(blackboardData));
+        }
         
         // APIに送信
         const uploadResponse = await fetch('/api/photos/upload', {
@@ -422,23 +613,175 @@ async function savePhoto() {
         });
         
         if (uploadResponse.ok) {
+            const result = await uploadResponse.json();
             alert('写真が保存されました');
             retakePhoto();
             generatePhotoNumber(); // 次の撮影用に新しい番号を生成
         } else {
-            throw new Error('写真の保存に失敗しました');
+            const errorText = await uploadResponse.text();
+            console.error('Server error:', errorText);
+            throw new Error(`写真の保存に失敗しました (${uploadResponse.status})`);
         }
         
     } catch (error) {
         console.error('写真保存エラー:', error);
-        alert('写真の保存に失敗しました');
+        alert(`写真の保存に失敗しました: ${error.message}`);
+    } finally {
+        // 保存ボタンを復元
+        const saveButton = document.querySelector('button[onclick="savePhoto()"]');
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.innerHTML = '<i class="fas fa-save"></i> 保存';
+        }
     }
 }
 
+// 黒板データを取得（デフォルトフィールドまたは動的フィールドから）
+function getBlackboardData() {
+    // デフォルトフィールドが表示されている場合
+    const defaultContainer = document.getElementById('defaultEditFields');
+    if (defaultContainer && defaultContainer.style.display !== 'none') {
+        return {
+            survey_number: document.getElementById('surveyNumberInput')?.value || '',
+            building_number: document.getElementById('buildingNumberInput')?.value || '',
+            owner: document.getElementById('ownerInput')?.value || '',
+            damage_type: document.getElementById('damageTypeInput')?.value || '',
+            damage_size: document.getElementById('damageSizeInput')?.value || '',
+            damage_location: document.getElementById('damageLocationInput')?.value || '',
+            photo_number: document.getElementById('photoNumberInput')?.value || ''
+        };
+    }
+    
+    // 動的フィールドが表示されている場合
+    const dynamicContainer = document.getElementById('dynamicEditFields');
+    if (dynamicContainer && dynamicContainer.style.display !== 'none') {
+        const dynamicData = {};
+        const dynamicFields = dynamicContainer.querySelectorAll('input, select, textarea');
+        
+        dynamicFields.forEach(field => {
+            const cellId = field.dataset.cellId;
+            const cellAddress = field.dataset.cellAddress;
+            if (cellId || cellAddress) {
+                dynamicData[cellId || cellAddress] = field.value || '';
+            }
+        });
+        
+        return dynamicData;
+    }
+    
+    return null;
+}
+
 // 再撮影
-function retakePhoto() {
+async function retakePhoto() {
+    console.log('DEBUG: retakePhoto() called');
+    
     document.getElementById('captureResult').style.display = 'none';
     capturedImageData = null;
+    
+    console.log('DEBUG: Capture result hidden, checking camera stream');
+    
+    // カメラストリームの状態を詳細に確認
+    const video = document.getElementById('cameraVideo');
+    const isStreamActive = checkCameraStreamStatus();
+    
+    console.log('DEBUG: Stream status check result:', isStreamActive);
+    
+    if (!isStreamActive) {
+        console.log('DEBUG: Camera stream appears to be lost or paused, attempting recovery...');
+        
+        // まずビデオの再生を試す（ストリームが生きている場合）
+        if (currentStream && video && video.paused) {
+            console.log('DEBUG: Attempting to resume paused video');
+            try {
+                await video.play();
+                console.log('DEBUG: Video playback resumed successfully');
+                return; // 成功したら終了
+            } catch (playError) {
+                console.error('DEBUG: Failed to resume video playback:', playError);
+            }
+        }
+        
+        // ビデオ再生が失敗した場合、カメラを再初期化
+        console.log('DEBUG: Reinitializing camera...');
+        try {
+            await initCamera();
+            console.log('DEBUG: Camera reinitialization successful');
+        } catch (error) {
+            console.error('DEBUG: Failed to reinitialize camera:', error);
+            alert('カメラの再初期化に失敗しました。ページを更新してください。');
+        }
+    } else {
+        console.log('DEBUG: Camera stream is active and working properly');
+    }
+}
+
+// カメラストリームの状態を詳細にチェック
+function checkCameraStreamStatus() {
+    console.log('DEBUG: checkCameraStreamStatus() called');
+    
+    const video = document.getElementById('cameraVideo');
+    
+    // 基本的なチェック
+    if (!video) {
+        console.log('DEBUG: Video element not found');
+        return false;
+    }
+    
+    if (!video.srcObject) {
+        console.log('DEBUG: Video srcObject is null');
+        return false;
+    }
+    
+    if (!currentStream) {
+        console.log('DEBUG: currentStream is null');
+        return false;
+    }
+    
+    // ストリームのトラック状態をチェック
+    const tracks = currentStream.getTracks();
+    console.log('DEBUG: Stream tracks count:', tracks.length);
+    
+    let activeTrackCount = 0;
+    tracks.forEach((track, index) => {
+        console.log(`DEBUG: Track ${index}: kind=${track.kind}, readyState=${track.readyState}, enabled=${track.enabled}`);
+        if (track.readyState === 'live' && track.enabled) {
+            activeTrackCount++;
+        }
+    });
+    
+    console.log('DEBUG: Active tracks count:', activeTrackCount);
+    
+    // ビデオ要素の状態をチェック
+    console.log('DEBUG: Video readyState:', video.readyState);
+    console.log('DEBUG: Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+    console.log('DEBUG: Video paused:', video.paused);
+    console.log('DEBUG: Video ended:', video.ended);
+    
+    // ストリームが実際に動作しているかの判定
+    const isStreamWorking = (
+        activeTrackCount > 0 && 
+        video.readyState >= 3 && // HAVE_FUTURE_DATA以上
+        video.videoWidth > 0 && 
+        video.videoHeight > 0 &&
+        !video.ended &&
+        !video.paused // pausedもチェック
+    );
+    
+    console.log('DEBUG: Stream working status:', isStreamWorking);
+    
+    // 追加の詳細チェック
+    if (!isStreamWorking) {
+        console.log('DEBUG: Stream not working reasons:');
+        console.log('  - activeTrackCount:', activeTrackCount > 0);
+        console.log('  - readyState >= 3:', video.readyState >= 3);
+        console.log('  - videoWidth > 0:', video.videoWidth > 0);
+        console.log('  - videoHeight > 0:', video.videoHeight > 0);
+        console.log('  - not ended:', !video.ended);
+        console.log('  - not paused:', !video.paused);
+    }
+    
+    return isStreamWorking;
 }
 
 // 黒板のドラッグ機能設定
@@ -446,6 +789,7 @@ function setupBlackboardDrag() {
     const blackboard = document.getElementById('blackboardOverlay');
     let isDragging = false;
     let startX, startY, startLeft, startTop;
+    let touchStartTime = 0;
     
     blackboard.addEventListener('mousedown', (e) => {
         isDragging = true;
@@ -472,7 +816,7 @@ function setupBlackboardDrag() {
         blackboard.style.cursor = 'move';
     });
     
-    // タッチイベント（モバイル対応）
+    // タッチイベント（モバイル対応）- 改善されたiPad対応
     blackboard.addEventListener('touchstart', (e) => {
         const touch = e.touches[0];
         isDragging = true;
@@ -480,11 +824,19 @@ function setupBlackboardDrag() {
         startY = touch.clientY;
         startLeft = parseInt(window.getComputedStyle(blackboard).left, 10);
         startTop = parseInt(window.getComputedStyle(blackboard).top, 10);
-    });
+        touchStartTime = Date.now();
+        
+        // タッチ開始時にページのスクロールを防ぐ
+        e.preventDefault();
+        e.stopPropagation();
+    }, { passive: false });
     
     document.addEventListener('touchmove', (e) => {
         if (!isDragging) return;
+        
+        // すべてのタッチ移動でページの動作を無効化
         e.preventDefault();
+        e.stopPropagation();
         
         const touch = e.touches[0];
         const x = touch.clientX - startX;
@@ -492,11 +844,142 @@ function setupBlackboardDrag() {
         
         blackboard.style.left = (startLeft + x) + 'px';
         blackboard.style.top = (startTop + y) + 'px';
+    }, { passive: false });
+    
+    document.addEventListener('touchend', (e) => {
+        if (isDragging) {
+            const touchEndTime = Date.now();
+            const touchDuration = touchEndTime - touchStartTime;
+            
+            // 短時間のタッチの場合はクリックとみなす
+            if (touchDuration < 150) {
+                // クリック動作（必要に応じて）
+                console.log('短時間タッチ（クリック）');
+            }
+            
+            isDragging = false;
+            
+            // イベントの伝播を停止
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, { passive: false });
+    
+    // 黒板領域外のタッチによるページ更新防止
+    blackboard.addEventListener('touchcancel', (e) => {
+        isDragging = false;
+        e.preventDefault();
+        e.stopPropagation();
+    }, { passive: false });
+}
+
+// iPad対応のタッチ防止設定
+function setupIPadTouchPrevention() {
+    // pull-to-refresh の無効化
+    let startY = 0;
+    let preventPullToRefresh = false;
+    
+    document.addEventListener('touchstart', (e) => {
+        startY = e.touches[0].clientY;
+        preventPullToRefresh = window.scrollY === 0;
     });
     
-    document.addEventListener('touchend', () => {
-        isDragging = false;
+    document.addEventListener('touchmove', (e) => {
+        const currentY = e.touches[0].clientY;
+        const distance = currentY - startY;
+        
+        // 画面上部でのスワイプダウン（リフレッシュ）を防ぐ
+        if (preventPullToRefresh && distance > 0) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+    
+    // 特定の範囲でのスクロール防止
+    const cameraContainer = document.querySelector('.camera-container');
+    if (cameraContainer) {
+        cameraContainer.addEventListener('touchmove', (e) => {
+            // カメラコンテナ内でのスクロールを完全に無効化
+            e.preventDefault();
+        }, { passive: false });
+    }
+    
+    // 画面上端からの下方向スワイプを検出して防止
+    document.addEventListener('touchstart', (e) => {
+        const touch = e.touches[0];
+        if (touch.clientY < 50) { // 画面上端から50px以内
+            const moveHandler = (moveEvent) => {
+                const moveTouch = moveEvent.touches[0];
+                const deltaY = moveTouch.clientY - touch.clientY;
+                
+                // 下方向への移動を検出
+                if (deltaY > 0) {
+                    moveEvent.preventDefault();
+                }
+            };
+            
+            const endHandler = () => {
+                document.removeEventListener('touchmove', moveHandler);
+                document.removeEventListener('touchend', endHandler);
+            };
+            
+            document.addEventListener('touchmove', moveHandler, { passive: false });
+            document.addEventListener('touchend', endHandler);
+        }
     });
+}
+
+// ストリーム監視機能
+let streamMonitorInterval = null;
+
+function startStreamMonitoring() {
+    console.log('DEBUG: Starting stream monitoring');
+    
+    // 既存の監視を停止
+    if (streamMonitorInterval) {
+        clearInterval(streamMonitorInterval);
+    }
+    
+    // 3秒ごとにストリーム状態をチェック（頻度を上げて迅速に復旧）
+    streamMonitorInterval = setInterval(() => {
+        // 撮影結果表示中は監視を一時停止
+        const captureResult = document.getElementById('captureResult');
+        if (captureResult && captureResult.style.display !== 'none') {
+            return; // ログを減らすためコメントを削除
+        }
+        
+        const isStreamActive = checkCameraStreamStatus();
+        if (!isStreamActive) {
+            console.log('DEBUG: Stream monitor detected inactive stream, attempting recovery...');
+            
+            // まずビデオの再生を試す
+            const video = document.getElementById('cameraVideo');
+            if (currentStream && video && video.paused) {
+                console.log('DEBUG: Monitor attempting to resume paused video');
+                video.play().then(() => {
+                    console.log('DEBUG: Monitor successfully resumed video');
+                }).catch(playError => {
+                    console.error('DEBUG: Monitor failed to resume video, reinitializing camera:', playError);
+                    initCamera().catch(error => {
+                        console.error('DEBUG: Stream monitor recovery failed:', error);
+                    });
+                });
+            } else {
+                // カメラを再初期化
+                console.log('DEBUG: Monitor reinitializing camera');
+                initCamera().catch(error => {
+                    console.error('DEBUG: Stream monitor recovery failed:', error);
+                });
+            }
+        }
+    }, 3000);
+}
+
+function stopStreamMonitoring() {
+    console.log('DEBUG: Stopping stream monitoring');
+    if (streamMonitorInterval) {
+        clearInterval(streamMonitorInterval);
+        streamMonitorInterval = null;
+    }
 }
 
 // プロジェクト一覧の読み込み

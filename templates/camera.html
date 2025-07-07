@@ -297,6 +297,27 @@
         display: none !important;
     }
     
+    /* iPadでの誤操作防止 */
+    body.touch-device {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+    
+    .camera-fullscreen {
+        touch-action: none;
+        overscroll-behavior: contain;
+    }
+    
+    /* 黒板の安全なドラッグ領域 */
+    .blackboard-overlay {
+        touch-action: none;
+        overscroll-behavior: contain;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+    }
+    
     /* 撮影結果表示 */
     .capture-result {
         position: fixed;
@@ -398,7 +419,7 @@
         <!-- トップメニューバー -->
         <div class="top-menu">
             <div class="menu-left">
-                <button class="btn menu-btn" onclick="exitFullscreen()">
+                <button id="exitButton" class="btn menu-btn">
                     <i class="fas fa-times"></i> 終了
                 </button>
                 <button class="btn menu-btn" onclick="toggleBlackboardEdit()">
@@ -589,7 +610,7 @@
             <button class="btn btn-success" onclick="toggleBlackboard()">
                 <i class="fas fa-chalkboard"></i>
             </button>
-            <button class="btn btn-capture" onclick="capturePhoto()">
+            <button class="btn btn-capture" onclick="console.log('DEBUG: Capture button clicked'); capturePhoto();">
                 <i class="fas fa-camera"></i>
             </button>
             <button class="btn btn-warning" onclick="toggleGrid()">
