@@ -1,0 +1,70 @@
+# ログファイルを無視
+app.log
+*.log
+logs/
+
+# データベースファイル
+*.db
+*.sqlite
+*.sqlite3
+
+# 一時ファイル
+*.tmp
+*.temp
+
+# アップロードされたファイル
+uploads/
+
+# Python関連
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 仮想環境
+venv/
+env/
+ENV/
+
+# IDE/エディタ設定
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS生成ファイル
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 証明書ファイル（セキュリティのため）
+*.pem
+*.key
+*.crt
+*.cer
+
+# 設定ファイル（機密情報含む可能性）
+.env
+config.ini
+secrets.json
