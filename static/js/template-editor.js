@@ -1551,16 +1551,39 @@ function createNewTemplate(templateData) {
     })
     .then(response => response.json())
     .then(result => {
+        console.debug('SAVE_DEBUG: サーバーレスポンス:', result);
         if (result.id) {
-            alert('テンプレートが保存されました');
-            window.location.href = '/templates';
+            console.log('✅ テンプレートが保存されました ID:', result.id);
+            
+            // デバッグモードかどうかを確認
+            const isDebugMode = window.location.search.includes('debug=true') || 
+                               window.debugConsole?.isVisible ||
+                               confirm('テンプレートが保存されました。\n\nデバッグを続行しますか？\n「OK」= この画面に留まる\n「キャンセル」= テンプレート一覧に戻る');
+            
+            if (isDebugMode) {
+                // デバッグモード：この画面に留まる
+                console.log('🐛 デバッグモード: テンプレート一覧に遷移せずこの画面に留まります');
+                editor.editingTemplateId = result.id; // 編集モードに切り替え
+                
+                // 保存ボタンのテキストを更新
+                const saveButton = document.getElementById('saveButton');
+                if (saveButton) {
+                    saveButton.innerHTML = '<i class="fas fa-save"></i> 更新保存';
+                }
+                
+                showSuccess('保存完了', 'テンプレートが保存されました（デバッグモード）');
+            } else {
+                // 通常モード：テンプレート一覧に遷移
+                window.location.href = '/templates';
+            }
         } else {
-            alert('保存に失敗しました');
+            console.error('SAVE_DEBUG: 保存失敗 - レスポンスにIDがありません:', result);
+            showError('保存エラー', '保存に失敗しました');
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('保存中にエラーが発生しました');
+        console.error('SAVE_DEBUG: 保存エラー:', error);
+        showError('保存エラー', '保存中にエラーが発生しました: ' + error.message);
     });
 }
 
@@ -1630,12 +1653,23 @@ function updateExistingTemplate(templateId, templateData) {
         }
     })
     .then(() => {
-        alert('テンプレートが更新されました');
-        window.location.href = '/templates';
+        console.log('✅ テンプレートが更新されました');
+        
+        // デバッグモードかどうかを確認
+        const isDebugMode = window.location.search.includes('debug=true') || 
+                           window.debugConsole?.isVisible ||
+                           confirm('テンプレートが更新されました。\n\nデバッグを続行しますか？\n「OK」= この画面に留まる\n「キャンセル」= テンプレート一覧に戻る');
+        
+        if (isDebugMode) {
+            console.log('🐛 デバッグモード: テンプレート一覧に遷移せずこの画面に留まります');
+            showSuccess('更新完了', 'テンプレートが更新されました（デバッグモード）');
+        } else {
+            window.location.href = '/templates';
+        }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('更新中にエラーが発生しました');
+        console.error('UPDATE_DEBUG: 更新エラー:', error);
+        showError('更新エラー', '更新中にエラーが発生しました: ' + error.message);
     });
 }
 
@@ -2059,4 +2093,32 @@ window.debugHelp = function() {
     console.log('• debugApiMergeTest() - APIテスト');
     console.log('');
     console.log('🔍 問題特定のために、保存・読み込み時のデバッグ出力を確認してください。');
+};
+
+// 完全なテスト（結合→保存→再読み込み）
+window.fullMergeTest = function() {
+    console.debug('=== 完全な結合セルテスト開始 ===');
+    
+    if (!editor) {
+        console.error('エディタが初期化されていません');
+        return;
+    }
+    
+    // ステップ1: セルを結合
+    console.debug('FULL_TEST: ステップ1 - セル結合');
+    editor.selectedCells = new Set(['0-0', '0-1']);
+    mergeCells();
+    
+    console.debug('FULL_TEST: 結合後のデータ確認:', Array.from(editor.mergedCells.entries()));
+    
+    // ステップ2: 保存準備
+    console.debug('FULL_TEST: ステップ2 - 保存準備');
+    document.getElementById('templateName').value = 'フルテスト_' + Date.now();
+    
+    // ステップ3: 保存
+    console.debug('FULL_TEST: ステップ3 - 保存実行');
+    saveTemplate();
+    
+    console.debug('=== 完全な結合セルテスト完了 ===');
+    console.log('🧪 保存完了後、ページを再読み込みして結合セルが復元されるかを確認してください');
 };

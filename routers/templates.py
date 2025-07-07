@@ -384,54 +384,13 @@ def create_web_template(template_data: dict, db: Session = Depends(get_db)):
                 # 同じスタイルを内部ID形式でも保存（カメラ画面での利用のため）
                 cell_styles[cell_id] = cell_style
         
-        # 結合セル情報を変換
-        merged_cells = []
-        if template_data.get('merged_cells'):
-            print(f"SERVER_DEBUG: 受信した結合データ: {template_data['merged_cells']}")
-            
-            # 配列形式の結合データ（Map.entries()から来る）を処理
-            for merge_entry in template_data['merged_cells']:
-                if isinstance(merge_entry, list) and len(merge_entry) == 2:
-                    merge_key, merge_info = merge_entry
-                    print(f"SERVER_DEBUG: 結合データ処理中: key={merge_key}, info={merge_info}")
-                    
-                    # merge_infoから必要な情報を取得
-                    if isinstance(merge_info, dict):
-                        start_cell = merge_info.get('startCell', '')
-                        end_cell = merge_info.get('endCell', '')
-                        row_span = merge_info.get('rowSpan', 1)
-                        col_span = merge_info.get('colSpan', 1)
-                        
-                        # 内部形式（0-0）をExcel形式（A1）に変換
-                        if start_cell and end_cell:
-                            try:
-                                start_row, start_col = map(int, start_cell.split('-'))
-                                end_row, end_col = map(int, end_cell.split('-'))
-                                
-                                # Excel形式のアドレスに変換
-                                start_excel = f"{chr(65 + start_col)}{start_row + 1}"
-                                end_excel = f"{chr(65 + end_col)}{end_row + 1}"
-                                range_excel = f"{start_excel}:{end_excel}"
-                                
-                                merged_cell_data = {
-                                    'start': start_excel,
-                                    'end': end_excel,
-                                    'range': range_excel,
-                                    'rowSpan': row_span,
-                                    'colSpan': col_span,
-                                    'mergeKey': merge_key
-                                }
-                                
-                                merged_cells.append(merged_cell_data)
-                                print(f"SERVER_DEBUG: 結合データ変換完了: {merged_cell_data}")
-                            except Exception as e:
-                                print(f"SERVER_DEBUG: 結合データ変換エラー: {e}, start_cell={start_cell}, end_cell={end_cell}")
-                        else:
-                            print(f"SERVER_DEBUG: 不正な結合データ: startCell={start_cell}, endCell={end_cell}")
-                else:
-                    print(f"SERVER_DEBUG: 予期しない結合データ形式: {merge_entry}")
-            
-            print(f"SERVER_DEBUG: 最終的な結合データ: {merged_cells}")
+        # 結合セル情報を変換（クライアント形式を保持）
+        merged_cells_raw = template_data.get('merged_cells', [])
+        print(f"SERVER_DEBUG: 受信した結合データ: {merged_cells_raw}")
+        
+        # Map.entries()形式をそのまま保存（データ形式を変更しない）
+        merged_cells = merged_cells_raw
+        print(f"SERVER_DEBUG: 保存する結合データ（変換なし）: {merged_cells}")
         
         # セルタイプとセル設定データを処理
         cell_types = template_data.get('cell_types', {})
